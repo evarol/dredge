@@ -9,11 +9,11 @@ num_sequential=20; %number of sequential registrations to always have
 temporal_lambda=0; %amount of temporal smoothness
 num_bins=1000; %number of time bins to divide data into
 %% read data
-data=h5read('Pt02_2.h5','/raster');
-% data=h5read('mg29_lfpraster.h5','/raster')';
+% data=h5read('Pt02_2.h5','/raster');
+data=h5read('mg29_lfpraster.h5','/raster')';
 
 %% filter, normalize and resize data
-for i=1:100
+for i=1:20
     data=medfilt2(data);
 end
 for t=1:20
