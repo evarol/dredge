@@ -2,7 +2,8 @@
 # neuropixelsLFPregistration
 Motion correction using the LFP band of neuropixels
 by Charlie Windolf, Erdem Varol, Columbia University
-in collaboration with Angelique Paulk, Yoav Kfir (MGH)
+
+In collaboration with Angelique Paulk, Yoav Kfir (MGH)
 
 To run
 1. Download demo files from dropbox link (too big for github) : 
