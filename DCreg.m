@@ -1,4 +1,4 @@
-function [data_reg,p]=DCreg(data,threshold,subsampling_rate,num_sequential)
+function [data_reg,p]=DCreg(data,threshold,subsampling_rate,num_sequential,temporal_lambda)
 %% decentralized registration
 D=nan(size(data,2));% pre-allocate displacement + correlation matrices
 C=nan(size(data,2));
@@ -6,11 +6,13 @@ C=nan(size(data,2));
 
 % pairwise subsampled displacement estimation
 for i=1:size(data,2)
-    for t=1:size(data,2)
+    for t=i:size(data,2)
         if or(rand(1)<subsampling_rate*log(size(data,2))/size(data,2),abs(i-t)<=num_sequential)
-            [x,c]=CXCORR(data(:,i)',data(:,t)');
+            [x,c]=myXCORR(data(:,i)',data(:,t)');
             [C(i,t),idx]=max(c);
             D(i,t)=x(idx);
+            D(t,i)=-x(idx);
+            C(t,i)=C(i,t);
             if mod(t,100)==0
                 figure(1)
                 imagesc(D(1:i,:));drawnow
@@ -57,7 +59,11 @@ ylabel('Time bins')
 title('Outlier Removed Subsampled XCorr Matrix');
 
 % compute centralized position estimates
-try;p=psolver(D);catch;p=zeros(size(data,2));end
+try
+    p=psolver_TF(D,temporal_lambda);
+catch
+    p=zeros(size(data,2));
+end
 
 
 % visualize position estimates

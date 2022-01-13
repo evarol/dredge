@@ -1,4 +1,8 @@
 function p=psolver(Dy,sigma)
+%ICASSP '21 solver
+%Dy - input T X T displacement matrix
+%sigma - robust regression standard deviation
+% Solves: \min_p||D - 1p^T - p1^T||
 if nargin<2
     robust=0;
 else
