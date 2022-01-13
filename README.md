@@ -18,6 +18,6 @@ To run
 Example results from 2 human neuropixels recordings from Paulk et al. (https://www.biorxiv.org/content/10.1101/2021.06.20.449152v2)
 
 
-![Dataset1](https://github.com/evarol/neuropixelsLFPregistration/blob/main/mg29.png)
+![Dataset1](https://github.com/evarol/neuropixelsLFPregistration/blob/main/mg29_results.png)
 
-![Dataset2](https://github.com/evarol/neuropixelsLFPregistration/blob/main/pt02.png)
+![Dataset2](https://github.com/evarol/neuropixelsLFPregistration/blob/main/pt02_results.png)
