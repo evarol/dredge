@@ -5,6 +5,9 @@ by Charlie Windolf, Erdem Varol (Columbia University)
 
 In collaboration with Angelique Paulk, Yoav Kfir (MGH)
 
+
+-=MATLAB INSTRUCTIONS=-
+
 To run
 1. Download demo files from dropbox link (too big for github) : 
 
@@ -21,3 +24,5 @@ Example results from 2 human neuropixels recordings from Paulk et al. (https://w
 ![Dataset1](https://github.com/evarol/neuropixelsLFPregistration/blob/main/mg29_results.png)
 
 ![Dataset2](https://github.com/evarol/neuropixelsLFPregistration/blob/main/pt02_results.png)
+
+-=PYTHON INSTRUCTIONS=-
