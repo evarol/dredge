@@ -18,6 +18,10 @@ To run
 2. Put file in same directory as all this code.
 3. Run main.m
 
+-=PYTHON INSTRUCTIONS=-
+
+[INSERT HERE]
+
 Example results from 2 human neuropixels recordings from Paulk et al. (https://www.biorxiv.org/content/10.1101/2021.06.20.449152v2)
 
 
@@ -25,4 +29,3 @@ Example results from 2 human neuropixels recordings from Paulk et al. (https://w
 
 ![Dataset2](https://github.com/evarol/neuropixelsLFPregistration/blob/main/pt02_results.png)
 
--=PYTHON INSTRUCTIONS=-
