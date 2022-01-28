@@ -21,6 +21,8 @@ from scipy.stats import norm, zscore
 from scipy.interpolate import RectBivariateSpline
 from tqdm.auto import trange, tqdm
 
+from pixelCSD import pixelCSD
+
 
 # -- library functions
 
@@ -59,24 +61,28 @@ def lfpraster(
         channels = range(C)
     geom = geom[channels]
     print("orig shape", lfp.shape)
-    lfp = lfp[channels]
+    data = lfp[channels]
     print("sub shape", lfp.shape)
+
+    # -- apply CSD
+    if csd:
+        data, y_locs = pixelCSD(data, geom)
 
     # -- decorrelation / standardization iters
     for _ in range(decorr_iters):
-        lfp = zscore(lfp, axis=0)
-        lfp = zscore(lfp, axis=1)
+        data = zscore(data, axis=0)
+        data = zscore(data, axis=1)
 
     # -- average at each z
-    z_unique = np.unique(geom[:, 1])
-    raster = np.empty((len(z_unique), T), dtype=lfp.dtype)
-    for i, z in enumerate(tqdm(z_unique, desc="averaging each z")):
-        where = np.flatnonzero(geom[:, 1] == z)
-        raster[i] = lfp[where].mean(axis=0)
-
-    # csd -- just second derivative for now, since units don't matter here
     if csd:
-        raster = 2 * raster[1:-1] - raster[2:] - raster[:-2]
+        # pixelCSD has already averaged for us
+        raster = data
+    else:
+        z_unique = np.unique(geom[:, 1])
+        raster = np.empty((len(z_unique), T), dtype=data.dtype)
+        for i, z in enumerate(tqdm(z_unique, desc="averaging each z")):
+            where = np.flatnonzero(geom[:, 1] == z)
+            raster[i] = data[where].mean(axis=0)
 
     return raster
 
