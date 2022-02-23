@@ -60,9 +60,7 @@ def lfpraster(
     if channels is None:
         channels = range(C)
     geom = geom[channels]
-    print("orig shape", lfp.shape)
     data = lfp[channels]
-    print("sub shape", lfp.shape)
 
     # -- apply CSD
     if csd:
@@ -80,7 +78,7 @@ def lfpraster(
     else:
         z_unique = np.unique(geom[:, 1])
         raster = np.empty((len(z_unique), T), dtype=data.dtype)
-        for i, z in enumerate(tqdm(z_unique, desc="averaging each z")):
+        for i, z in enumerate(z_unique):
             where = np.flatnonzero(geom[:, 1] == z)
             raster[i] = data[where].mean(axis=0)
 
@@ -101,6 +99,8 @@ def psolvecorr(D, C, mincorr=0.7):
     ones = np.ones(n_sampled)
     M = sparse.csr_matrix((ones, (range(n_sampled), I)), shape=(n_sampled, T))
     N = sparse.csr_matrix((ones, (range(n_sampled), J)), shape=(n_sampled, T))
+    print(T, I.shape, J.shape, D.shape, D[I, J].shape)
+    print(ones.shape, M.shape, N.shape)
 
     # solve sparse least squares problem
     p, *_ = sparse.linalg.lsqr(M - N, D[I, J])
@@ -171,8 +171,8 @@ def calc_corr_decent(
 
     D = np.empty((T, T), dtype=np.float32)
     C = np.empty((T, T), dtype=np.float32)
-    for i in trange((T + 1) // batch_size):
-        batch = image[i * batch_size : (i + 1) * batch_size]
+    for i in trange(0, T, batch_size):
+        batch = image[i:i + batch_size]
         corr = F.conv2d(  # BT1P
             batch,  # B11D
             weights,
@@ -180,8 +180,8 @@ def calc_corr_decent(
         )
         max_corr, best_disp_inds = torch.max(corr[:, :, 0, :], dim=2)
         best_disp = possible_displacement[best_disp_inds.cpu()]
-        D[i * batch_size : (i + 1) * batch_size] = best_disp
-        C[i * batch_size : (i + 1) * batch_size] = max_corr.cpu()
+        D[i:i + batch_size] = best_disp
+        C[i:i + batch_size] = max_corr.cpu()
 
     # free GPU memory (except torch drivers... happens when process ends)
     del raster, corr, batch, max_corr, best_disp_inds, image, weights
