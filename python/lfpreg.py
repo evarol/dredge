@@ -99,8 +99,6 @@ def psolvecorr(D, C, mincorr=0.7):
     ones = np.ones(n_sampled)
     M = sparse.csr_matrix((ones, (range(n_sampled), I)), shape=(n_sampled, T))
     N = sparse.csr_matrix((ones, (range(n_sampled), J)), shape=(n_sampled, T))
-    print(T, I.shape, J.shape, D.shape, D[I, J].shape)
-    print(ones.shape, M.shape, N.shape)
 
     # solve sparse least squares problem
     p, *_ = sparse.linalg.lsqr(M - N, D[I, J])
@@ -108,7 +106,7 @@ def psolvecorr(D, C, mincorr=0.7):
 
 
 def calc_corr_decent(
-    raster, disp=None, batch_size=32, step_size=1, device=None
+    raster, disp=None, batch_size=32, step_size=1, device=None, pbar=True
 ):
     """Calculate TxT normalized xcorr and best displacement matrices
 
@@ -171,7 +169,8 @@ def calc_corr_decent(
 
     D = np.empty((T, T), dtype=np.float32)
     C = np.empty((T, T), dtype=np.float32)
-    for i in trange(0, T, batch_size):
+    xrange = trange if pbar else range
+    for i in xrange(0, T, batch_size):
         batch = image[i:i + batch_size]
         corr = F.conv2d(  # BT1P
             batch,  # B11D
