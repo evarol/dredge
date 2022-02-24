@@ -265,14 +265,14 @@ def online_register_rigid(
     mincorr=0.7,
     disp=None,
     csd=False,
-    channels=None,
+    channels=slice(None),
 ):
     T = raw_recording.shape[1]
 
     # -- initialize
     raster0 = lfpreg.lfpraster(
         raw_recording[channels, 0:batch_length:time_downsample_factor],
-        geom,
+        geom[channels],
         channels=channels,
         csd=csd,
     )
@@ -289,7 +289,7 @@ def online_register_rigid(
         be = min(T, bs + batch_length)
         raster1 = lfpreg.lfpraster(
             raw_recording[channels, bs:be:time_downsample_factor],
-            geom,
+            geom[channels],
             channels=channels,
             csd=csd,
         )
