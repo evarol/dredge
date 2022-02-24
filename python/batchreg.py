@@ -273,7 +273,6 @@ def online_register_rigid(
     raster0 = lfpreg.lfpraster(
         raw_recording[channels, 0:batch_length:time_downsample_factor],
         geom[channels],
-        channels=channels,
         csd=csd,
     )
     D00, C00 = lfpreg.calc_corr_decent(
@@ -290,7 +289,6 @@ def online_register_rigid(
         raster1 = lfpreg.lfpraster(
             raw_recording[channels, bs:be:time_downsample_factor],
             geom[channels],
-            channels=channels,
             csd=csd,
         )
         D01, C01 = calc_corr_decent_pair(raster0, raster1, disp=disp)
