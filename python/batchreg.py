@@ -267,11 +267,11 @@ def online_register_rigid(
     csd=False,
     channels=None,
 ):
-    C, T = raw_recording.shape
+    T = raw_recording.shape[1]
 
     # -- initialize
     raster0 = lfpreg.lfpraster(
-        raw_recording[:, 0:batch_length:time_downsample_factor],
+        raw_recording[channels, 0:batch_length:time_downsample_factor],
         geom,
         channels=channels,
         csd=csd,
@@ -288,7 +288,7 @@ def online_register_rigid(
     for bs in trange(batch_length, T, batch_length, desc="batches"):
         be = min(T, bs + batch_length)
         raster1 = lfpreg.lfpraster(
-            raw_recording[:, bs:be:time_downsample_factor],
+            raw_recording[channels, bs:be:time_downsample_factor],
             geom,
             channels=channels,
             csd=csd,
@@ -302,9 +302,11 @@ def online_register_rigid(
         p1 = psolveonline(D01, C01, D11, C11, p0, mincorr)
         ps.append(p1)
 
+        # update loop variables
         raster0 = raster1
         D00 = D11
         C00 = C11
         p0 = p1
+
     p = np.concatenate(ps)
     return p
