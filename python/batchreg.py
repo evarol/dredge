@@ -93,7 +93,7 @@ def calc_corr_decent_pair(
     D = np.empty((Ta, Tb), dtype=np.float32)
     C = np.empty((Ta, Tb), dtype=np.float32)
     for i in range(0, Ta, batch_size):
-        batch = image[i:i + batch_size]
+        batch = image[i : i + batch_size]
         corr = F.conv2d(  # BT1P
             batch,  # B11D
             weights,
@@ -101,8 +101,8 @@ def calc_corr_decent_pair(
         )
         max_corr, best_disp_inds = torch.max(corr[:, :, 0, :], dim=2)
         best_disp = possible_displacement[best_disp_inds.cpu()]
-        D[i:i + batch_size] = best_disp
-        C[i:i + batch_size] = max_corr.cpu()
+        D[i : i + batch_size] = best_disp
+        C[i : i + batch_size] = max_corr.cpu()
 
     # free GPU memory (except torch drivers... happens when process ends)
     del (
@@ -138,7 +138,7 @@ def psolvesparse(D):
     # solve sparse least squares problem
     print("lsqr problem shape", M.shape, D_nz.shape)
     # p, *_ = sparse.linalg.lsmr(M - N, D_nz, show=True)
-    p, *_ = sparse.linalg.lsqr(M - N, D_nz, show=True)
+    p, *_ = sparse.linalg.lsmr(M - N, D_nz, show=True)
     return p
 
 
@@ -204,7 +204,7 @@ def batch_register_rigid(
         iis.append(t_cur_ds + jj)
         jjs.append(t_prev_ds + ii)
         corrs.append(Cab[ii, jj])
-        disps.append(Dab[ii, jj])
+        disps.append(-Dab[ii, jj])
 
         # if last batch, also fill in daigonal block for raw_b
         if b == nbatches - 1:
@@ -220,12 +220,10 @@ def batch_register_rigid(
         iis = np.hstack(iis)
         jjs = np.hstack(jjs)
         corrs = sparse.coo_matrix(
-            (np.hstack(corrs), (iis, jjs)),
-            shape=(T_ds, T_ds)
+            (np.hstack(corrs), (iis, jjs)), shape=(T_ds, T_ds)
         ).tocsr()
         disps = sparse.coo_matrix(
-            (np.hstack(disps), (iis, jjs)),
-            shape=(T_ds, T_ds)
+            (np.hstack(disps), (iis, jjs)), shape=(T_ds, T_ds)
         ).tocsr()
 
     # centralize
@@ -236,27 +234,77 @@ def batch_register_rigid(
     return p, disps, corrs
 
 
+def psolveonline(D01, C01, D11, C11, p0, mincorr):
+    # subsample where corr > mincorr
+    i0, j0 = np.nonzero(C01 >= mincorr)
+    n0 = i0.shape[0]
+    t1 = D01.shape[1]
+    i1, j1 = np.nonzero(C11 >= mincorr)
+    n1 = i1.shape[0]
+    assert t1 == D11.shape[0]
+
+    # construct Kroneckers
+    ones0 = np.ones(n0)
+    ones1 = np.ones(n1)
+    U = sparse.coo_matrix((ones1, (range(n1), i1)), shape=(n1, t1))
+    V = sparse.coo_matrix((ones1, (range(n1), j1)), shape=(n1, t1))
+    W = sparse.coo_matrix((ones0, (range(n0), j0)), shape=(n0, t1))
+
+    # build lsqr problem
+    A = sparse.vstack([U - V, W]).tocsc()
+    b = np.concatenate([D11[i1, j1], -(D01 - p0[:, None])[i0, j0]])
+    p1, *_ = sparse.linalg.lsmr(A, b)
+    return p1
+
+
 def online_register_rigid(
     raw_recording,
     geom,
-    batch_length=25_000,
+    batch_length=50_000,
     time_downsample_factor=5,
     mincorr=0.7,
     disp=None,
     csd=False,
     channels=None,
 ):
-    ps = []
     C, T = raw_recording.shape
 
     # -- initialize
-    raster0 = ...
-    p0 = lfpreg.register_rigid(
-        raster0,
-        mincorr=mincorr,
-        disp=disp,
+    raster0 = lfpreg.lfpraster(
+        raw_recording[:, 0:batch_length:time_downsample_factor],
+        geom,
+        channels=channels,
+        csd=csd,
     )
+    D00, C00 = lfpreg.calc_corr_decent(
+        raster0,
+        disp=disp,
+        pbar=False,
+    )
+    p0 = lfpreg.psolvecorr(D00, C00, mincorr=mincorr)
 
     # -- loop
+    ps = [p0]
     for bs in trange(batch_length, T, batch_length, desc="batches"):
-        pass
+        be = min(T, bs + batch_length)
+        raster1 = lfpreg.lfpraster(
+            raw_recording[:, bs:be:time_downsample_factor],
+            geom,
+            channels=channels,
+            csd=csd,
+        )
+        D01, C01 = calc_corr_decent_pair(raster0, raster1, disp=disp)
+        D11, C11 = lfpreg.calc_corr_decent(
+            raster1,
+            disp=disp,
+            pbar=False,
+        )
+        p1 = psolveonline(D01, C01, D11, C11, p0, mincorr)
+        ps.append(p1)
+
+        raster0 = raster1
+        D00 = D11
+        C00 = C11
+        p0 = p1
+    p = np.concatenate(ps)
+    return p
