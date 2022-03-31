@@ -266,15 +266,18 @@ def online_register_rigid(
     disp=None,
     csd=False,
     channels=slice(None),
+    do_raster=True,
 ):
     T = raw_recording.shape[1]
 
     # -- initialize
-    raster0 = lfpreg.lfpraster(
-        raw_recording[channels, 0:batch_length:time_downsample_factor],
-        geom[channels],
-        csd=csd,
-    )
+    raster0 = raw_recording[channels, 0:batch_length:time_downsample_factor]
+    if do_raster:
+        raster0 = lfpreg.lfpraster(
+            raster0,
+            geom[channels],
+            csd=csd,
+        )
     D00, C00 = lfpreg.calc_corr_decent(
         raster0,
         disp=disp,
@@ -286,11 +289,13 @@ def online_register_rigid(
     ps = [p0]
     for bs in trange(batch_length, T, batch_length, desc="batches"):
         be = min(T, bs + batch_length)
-        raster1 = lfpreg.lfpraster(
-            raw_recording[channels, bs:be:time_downsample_factor],
-            geom[channels],
-            csd=csd,
-        )
+        raster1 = raw_recording[channels, bs:be:time_downsample_factor]
+        if do_raster:
+            raster1 = lfpreg.lfpraster(
+                raster1,
+                geom[channels],
+                csd=csd,
+            )
         D01, C01 = calc_corr_decent_pair(raster0, raster1, disp=disp)
         D11, C11 = lfpreg.calc_corr_decent(
             raster1,
