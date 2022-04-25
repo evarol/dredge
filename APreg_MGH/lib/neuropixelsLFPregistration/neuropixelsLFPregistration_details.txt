@@ -1,0 +1,9 @@
+This library is taken from:
+
+https://github.com/evarol/neuropixelsLFPregistration/commits/main
+
+Optional raster
+ main
+@cwindolf
+cwindolf Commits on Mar 31, 2022
+1 parent 8115244 commit 6b6770a9dae6c6ead8a7bf0ea16fde5df85b2b6f
