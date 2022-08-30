@@ -13,7 +13,9 @@ def pixelcsd(lfp, geom):
         CSD [array]: [description]
     """
     if geom.shape[0] != lfp.shape[0]:
-        raise ValueError("May need to transpose `lfp`.")
+        raise ValueError(
+            "May need to transpose `lfp`. It should be depth x time."
+        )
 
     x_values = geom[:, 0]
     y_values = geom[:, 1]
@@ -28,7 +30,6 @@ def pixelcsd(lfp, geom):
         np.nan,
         dtype=lfp.dtype,
     )
-    y_domain = y_unique[1:-1]
 
     for i, x in enumerate(x_unique):
         lfp_subset = lfp[x_values == x, :]
@@ -42,4 +43,4 @@ def pixelcsd(lfp, geom):
     mean_csd = np.nanmean(csd, 2)
     # remove rows that are all NaNs:
     idx = ~np.isnan(mean_csd).all(axis=1)
-    return mean_csd[idx], y_domain[idx]
+    return mean_csd[idx], y_values[idx]
