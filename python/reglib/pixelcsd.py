@@ -24,7 +24,7 @@ def pixelcsd(lfp, geom):
 
     # init with NaNs:
     csd = np.full(
-        (y_unique.size - 2, lfp.shape[1], x_unique.size),
+        (y_unique.size, lfp.shape[1], x_unique.size),
         np.nan,
         dtype=lfp.dtype,
     )
