@@ -20,9 +20,7 @@ To run
 
 -=PYTHON INSTRUCTIONS=-
 
-See `python/demo.ipynb` for example usage on two datasets.
-
-Detailed documentation is included in `python/lfpreg.py`, which includes methods for computing "LFP rasters", fast (optionally GPU-accelerated) cross correlations, and both rigid and non-rigid decentralized registration.
+See [the README: `python/README.md`](python/README.md).
 
 
 Example results from 2 human neuropixels recordings from Paulk et al. (https://www.biorxiv.org/content/10.1101/2021.06.20.449152v2)
