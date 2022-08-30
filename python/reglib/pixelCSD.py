@@ -1,43 +1,45 @@
 import numpy as np
 
 
-def pixelCSD(data, geom):
-    """Takes neuropixels data and geometry and computes CSD for each column
+def pixelcsd(lfp, geom):
+    """Takes neuropixels lfp and geometry and computes CSD for each column
        returns the average per-depth
 
     Args:
-        data ([type]): [description]
-        geom ([type]): [description]
+        lfp : np.array, depth by time
+        geom : n_channels by 2
 
     Returns:
         CSD [array]: [description]
     """
-    X_values = geom[:, 0]
-    Y_values = geom[:, 1]
-    X_unique = np.unique(X_values)
+    if geom.shape[0] != lfp.shape[0]:
+        raise ValueError("May need to transpose `lfp`.")
+
+    x_values = geom[:, 0]
+    y_values = geom[:, 1]
+    assert all(y_values[1:] >= y_values[:-1]), "Requires depth order."
+
+    x_unique = np.unique(x_values)
+    y_unique = np.unique(y_values)
 
     # init with NaNs:
-    CSD = np.full((len(np.unique(Y_values))-2, data.shape[1],
-                   len(X_unique)), np.nan, dtype='float32')
-    CSD_y = np.unique(Y_values)[1:-1]
+    csd = np.full(
+        (y_unique.size - 2, lfp.shape[1], x_unique.size),
+        np.nan,
+        dtype=lfp.dtype,
+    )
+    y_domain = y_unique[1:-1]
 
-    for x in range(len(X_unique)):
-        subset = data[X_values == X_unique[x], :]
-        y = Y_values[X_values == X_unique[x]]
-        y_full = np.tile(np.diff(y), (subset.shape[1], 1)).T
+    for i, x in enumerate(x_unique):
+        lfp_subset = lfp[x_values == x, :]
+        y_subset = y_values[x_values == x]
 
-        temp_csd = computeCSD(subset, y_full)
+        # csd as second spatial derivative
+        csd_subset = np.gradient(lfp_subset, y_subset, axis=0)
+        csd_subset = np.gradient(csd_subset, y_subset, axis=0)
+        csd[x_values == x, :, i] = csd_subset
 
-        depth_idx = np.searchsorted(CSD_y, y)
-        depth_idx
-        CSD[depth_idx[1:-1], :, x] = temp_csd
-
-    mean_CSD = np.nanmean(CSD, 2)
+    mean_csd = np.nanmean(csd, 2)
     # remove rows that are all NaNs:
-    idx = ~np.isnan(mean_CSD).all(axis=1)
-    return mean_CSD[idx], CSD_y[idx]
-
-
-def computeCSD(data, y_diff):
-    csd = (2 * data[1:-1] - data[2:] - data[:-2]) / y_diff[:-1]
-    return csd.astype('float32')
+    idx = ~np.isnan(mean_csd).all(axis=1)
+    return mean_csd[idx], y_domain[idx]
