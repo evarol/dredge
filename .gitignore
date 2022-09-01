@@ -2,3 +2,7 @@
 *.h5
 **/*.egg-info/*
 **/__pycache__/*
+**/build/*
+*.pyx
+*.c
+*.so

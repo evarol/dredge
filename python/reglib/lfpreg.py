@@ -17,9 +17,8 @@ from scipy.interpolate import RectBivariateSpline
 from scipy.stats import norm
 from tqdm.auto import trange
 
-from spike_psvae.ibme_corr import calc_corr_decent, psolvecorr
-from spike_psvae import ibme_corr
-from spike_psvae.ibme import compose_shifts_in_orig_domain
+from .ibme_corr import calc_corr_decent, psolvecorr, online_register_rigid
+from .ibme import compose_shifts_in_orig_domain
 
 
 # -- rigid registration
@@ -72,36 +71,6 @@ def rigid_registered_raster(raster, p):
     )
     uu = (dd + total_shift).ravel()
     return raster_lerp(uu, tt.ravel(), grid=False).reshape(D, T)
-
-
-# online method: faster and lower memory for long recordings
-
-def online_register_rigid(
-    raster,
-    batch_length=10000,
-    time_downsample_factor=1,
-    mincorr=0.7,
-    disp=None,
-    batch_size=32,
-    device=None,
-):
-    """Online rigid registration
-
-    Lower memory and faster for large recordings.
-
-    Returns:
-    p : the vector of estimated displacements
-    """
-    p = ibme_corr.online_register_rigid(
-        raster,
-        batch_length=batch_length,
-        time_downsample_factor=time_downsample_factor,
-        mincorr=mincorr,
-        disp=disp,
-        batch_size=batch_size,
-        device=device,
-    )
-    return p
 
 
 # -- nonrigid registration

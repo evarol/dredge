@@ -38,9 +38,9 @@ def pixelcsd(lfp, geom):
         # csd as second spatial derivative
         csd_subset = np.gradient(lfp_subset, y_subset, axis=0)
         csd_subset = np.gradient(csd_subset, y_subset, axis=0)
-        csd[x_values == x, :, i] = csd_subset
+        csd[np.isin(y_unique, y_subset), :, i] = csd_subset
 
-    mean_csd = np.nanmean(csd, 2)
+    mean_csd = np.nanmean(csd, axis=2)
     # remove rows that are all NaNs:
     idx = ~np.isnan(mean_csd).all(axis=1)
-    return mean_csd[idx], y_values[idx]
+    return mean_csd[idx], y_unique[idx]
