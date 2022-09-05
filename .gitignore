@@ -3,6 +3,7 @@
 **/*.egg-info/*
 **/__pycache__/*
 **/build/*
-*.pyx
+*.pyo
 *.c
 *.so
+**/.DS_Store
