@@ -38,6 +38,7 @@ def run_preprocessing(
     t_end=None,
     debug_imshow=False,
     depth_range=None,
+    channel_mask=None,
 ):
     """Just preprocessing. For spike detection, use method below.
 
@@ -70,6 +71,19 @@ def run_preprocessing(
 
     out_bin = Path(out_bin)
 
+    if channel_mask is not None:
+        if lfp_destripe:
+            raise ValueError("Cannot use channel_mask with lfp_destripe")
+
+    if csd and avg_depth:
+        raise ValueError("Cannot use csd with avg_depth")
+
+    # channel_mask could be boolean mask or list of channels
+    # this will normalize so that we always have boolean mask
+    cm = np.full(n_channels, False)
+    cm[channel_mask] = 1
+    channel_mask = cm
+
     # preprocessed chunk factory
     get_chunk = make_chunk_preprocessor(
         raw_bin,
@@ -90,6 +104,7 @@ def run_preprocessing(
         csd=csd,
         avg_depth=avg_depth,
         depth_range=depth_range,
+        channel_mask=channel_mask,
     )
 
     # Create output
@@ -223,6 +238,7 @@ def make_chunk_preprocessor(
     dtype=np.float32,
     out_dtype=np.float32,
     depth_range=None,
+    channel_mask=None,
 ):
     # build bandpass filter
     if bp is not None:
@@ -249,12 +265,14 @@ def make_chunk_preprocessor(
             chunk = np.pad(
                 chunk, [(pad_left, pad_right), (0, 0)], mode="reflect"
             )
-        
-        valid_channels = slice(None)
+
+        valid_channels = np.full(n_channels, True)
         if depth_range is not None:
             dmin, dmax = depth_range
             valid_channels = (geom[:, 1] > dmin) & (geom[:, 1] < dmax)
-            chunk = chunk[:, valid_channels]
+        if channel_mask is not None:
+            valid_channels[~channel_mask] = False
+        chunk = chunk[:, valid_channels]
 
         # bandpass filter
         if bp is not None:
