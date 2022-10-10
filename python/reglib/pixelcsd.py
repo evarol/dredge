@@ -19,7 +19,12 @@ def pixelcsd(lfp, geom):
 
     x_values = geom[:, 0]
     y_values = geom[:, 1]
-    assert all(y_values[1:] >= y_values[:-1]), "Requires depth order."
+    if not all(y_values[1:] >= y_values[:-1]):
+        y_sort = np.argsort(y_values)
+        lfp = lfp[y_sort]
+        geom = geom[y_sort]
+        x_values = geom[:, 0]
+        y_values = geom[:, 1]
 
     x_unique = np.unique(x_values)
     y_unique = np.unique(y_values)

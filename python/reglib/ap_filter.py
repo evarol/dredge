@@ -37,6 +37,7 @@ def run_preprocessing(
     t_start=0,
     t_end=None,
     debug_imshow=False,
+    depth_range=None,
 ):
     """Just preprocessing. For spike detection, use method below.
 
@@ -88,6 +89,7 @@ def run_preprocessing(
         lfp_destripe=lfp_destripe,
         csd=csd,
         avg_depth=avg_depth,
+        depth_range=depth_range,
     )
 
     # Create output
@@ -220,6 +222,7 @@ def make_chunk_preprocessor(
     csd=False,
     dtype=np.float32,
     out_dtype=np.float32,
+    depth_range=None,
 ):
     # build bandpass filter
     if bp is not None:
@@ -246,6 +249,12 @@ def make_chunk_preprocessor(
             chunk = np.pad(
                 chunk, [(pad_left, pad_right), (0, 0)], mode="reflect"
             )
+        
+        valid_channels = slice(None)
+        if depth_range is not None:
+            dmin, dmax = depth_range
+            valid_channels = (geom[:, 1] > dmin) & (geom[:, 1] < dmax)
+            chunk = chunk[:, valid_channels]
 
         # bandpass filter
         if bp is not None:
@@ -271,14 +280,14 @@ def make_chunk_preprocessor(
 
         if avg_depth:
             # average same depth channels
-            unique_depths, same_depth_chans = np.unique(geom[:, 1], return_inverse=True)
+            unique_depths, same_depth_chans = np.unique(geom[valid_channels, 1], return_inverse=True)
             chunk_ = np.zeros((chunk.shape[0], unique_depths.size), dtype=chunk.dtype)
             np.add.at(chunk_, (slice(None), same_depth_chans), chunk)
             chunk = chunk_ * (unique_depths.size / same_depth_chans.size)
 
         if csd:
             assert not avg_depth
-            chunk, yuniq = pixelcsd(chunk.T, geom)
+            chunk, yuniq = pixelcsd(chunk.T, geom[valid_channels])
             chunk = chunk.T
 
         # z score iters for decorrelation
