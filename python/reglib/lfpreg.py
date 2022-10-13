@@ -24,6 +24,35 @@ from .ibme import compose_shifts_in_orig_domain
 # -- rigid registration
 
 
+def channels_to_microns(p, geom):
+    """
+    Convert a displacement estimate `p` from units of channels
+    to microns using the geometry array `geom`.
+
+    This just attempts to find the pitch of the probe and
+    multiplies by that number.
+
+    Arguments
+    ---------
+    p : np.array
+        A displacement estimate.
+    geom : np.array
+        The geometry of the recording or raster used to compute `p`
+
+    Returns
+    -------
+    p_um : np.array
+    """
+    # find the pitch
+    y = np.sort(geom[:, 1])
+    dy = np.diff(y)
+    pitch = dy[dy > 0].min()
+
+    # scale and return
+    p_um = pitch * p
+    return p_um
+
+
 def register_rigid(
     raster,
     mincorr=0.7,
