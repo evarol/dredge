@@ -383,7 +383,8 @@ def calc_corr_decent_pair(
     return D, C
 
 
-def psolveonline(D01, C01, D11, C11, p0, mincorr):
+def psolveonline(D01, C01, D11, C11, p0, mincorr=0, prior_lambda=0):
+    """Solves for the displacement of the new block in the online setting"""
     # subsample where corr > mincorr
     i0, j0 = np.nonzero(C01 >= mincorr)
     n0 = i0.shape[0]
@@ -399,10 +400,28 @@ def psolveonline(D01, C01, D11, C11, p0, mincorr):
     V = sparse.coo_matrix((ones1, (range(n1), j1)), shape=(n1, t1))
     W = sparse.coo_matrix((ones0, (range(n0), j0)), shape=(n0, t1))
 
-    # build lsqr problem
+    # build basic lsqr problem
     A = sparse.vstack([U - V, W]).tocsc()
     b = np.concatenate([D11[i1, j1], -(D01 - p0[:, None])[i0, j0]])
+
+    # add in prior if requested
+    if prior_lambda > 0:
+        diff = sparse.diags(
+            (
+                np.full(t1 - 1, -prior_lambda, dtype=A.dtype),
+                np.full(t1 - 1, prior_lambda, dtype=A.dtype),
+            ),
+            offsets=(0, 1),
+            shape=(t1 - 1, t1),
+        )
+        A = sparse.vstack((A, diff), format="csr")
+        b = np.concatenate(
+            (b, np.zeros(t1 - 1)),
+        )
+
+    # solve
     p1, *_ = sparse.linalg.lsmr(A, b)
+
     return p1
 
 
@@ -415,6 +434,7 @@ def online_register_rigid(
     batch_size=32,
     device=None,
     adaptive_mincorr_percentile=None,
+    prior_lambda=0,
 ):
     """Online rigid registration
 
@@ -439,7 +459,7 @@ def online_register_rigid(
         mincorr = np.percentile(
             np.diagonal(C00, 1), adaptive_mincorr_percentile
         )
-    p0 = psolvecorr(D00, C00, mincorr=mincorr)
+    p0 = psolvecorr(D00, C00, mincorr=mincorr, prior_lambda=prior_lambda)
 
     # -- loop
     ps = [p0]
@@ -464,7 +484,9 @@ def online_register_rigid(
             mincorr = np.percentile(
                 np.diagonal(C11, 1), adaptive_mincorr_percentile
             )
-        p1 = psolveonline(D01, C01, D11, C11, p0, mincorr)
+        p1 = psolveonline(
+            D01, C01, D11, C11, p0, mincorr=mincorr, prior_lambda=prior_lambda
+        )
         ps.append(p1)
 
         # update loop variables
