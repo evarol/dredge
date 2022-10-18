@@ -42,7 +42,9 @@ def register_raster_rigid(
         device=device,
         pbar=pbar,
     )
-    p = psolvecorr(D, C, mincorr=mincorr, robust_sigma=robust_sigma, max_dt=max_dt)
+    p = psolvecorr(
+        D, C, mincorr=mincorr, robust_sigma=robust_sigma, max_dt=max_dt
+    )
     return p, D, C
 
 
@@ -59,9 +61,7 @@ def weighted_lsqr(Wij, Dij, I, J, T, p0):
     def jac(p):
         return fixed_terms - 2 * (Wsq @ p) + 2 * p * diag_WW
 
-    res = minimize(
-        fun=obj, jac=jac, x0=p0, method="L-BFGS-B"
-    )
+    res = minimize(fun=obj, jac=jac, x0=p0, method="L-BFGS-B")
     if not res.success:
         print("Global displacement gradient descent had an error")
     p = res.x
@@ -69,7 +69,15 @@ def weighted_lsqr(Wij, Dij, I, J, T, p0):
     return p
 
 
-def psolvecorr(D, C, mincorr=0.0, robust_sigma=0, robust_iter=5, max_dt=None):
+def psolvecorr(
+    D,
+    C,
+    mincorr=0.0,
+    robust_sigma=0,
+    robust_iter=5,
+    max_dt=None,
+    prior_lambda=0,
+):
     """Solve for rigid displacement given pairwise disps + corrs"""
     T = D.shape[0]
     assert (T, T) == D.shape == C.shape
@@ -78,7 +86,9 @@ def psolvecorr(D, C, mincorr=0.0, robust_sigma=0, robust_iter=5, max_dt=None):
     S = C >= mincorr
     if max_dt is not None and max_dt > 0:
         S &= la.toeplitz(
-            np.r_[np.ones(max_dt, dtype=bool), np.zeros(T - max_dt, dtype=bool)]
+            np.r_[
+                np.ones(max_dt, dtype=bool), np.zeros(T - max_dt, dtype=bool)
+            ]
         )
     I, J = np.where(S == 1)
     n_sampled = I.shape[0]
@@ -90,6 +100,21 @@ def psolvecorr(D, C, mincorr=0.0, robust_sigma=0, robust_iter=5, max_dt=None):
     A = M - N
     V = D[I, J]
 
+    # add in our prior p_{i+1} - p_i ~ N(0, lambda) by extending the problem
+    if prior_lambda > 0:
+        diff = sparse.diags(
+            (
+                np.full(T - 1, -prior_lambda, dtype=A.dtype),
+                np.full(T - 1, prior_lambda, dtype=A.dtype),
+            ),
+            offsets=(0, 1),
+            shape=(T - 1, T),
+        )
+        A = sparse.vstack((A, diff), format="csr")
+        V = np.concatenate(
+            (V, np.zeros(T - 1)),
+        )
+
     # solve sparse least squares problem
     if robust_sigma is not None and robust_sigma > 0:
         idx = slice(None)
@@ -97,7 +122,7 @@ def psolvecorr(D, C, mincorr=0.0, robust_sigma=0, robust_iter=5, max_dt=None):
             p, *_ = sparse.linalg.lsqr(A[idx], V[idx])
             idx = np.flatnonzero(np.abs(zscore(A @ p - V)) <= robust_sigma)
     else:
-        p, *_ = sparse.linalg.lsqr(A, V)
+        p, *_ = sparse.linalg.lsmr(A, V)
 
     return p
 
@@ -169,7 +194,7 @@ def calc_corr_decent(
     if not normalized:
         # if we're not doing full normxcorr, we still want to keep
         # the outputs between 0 and 1
-        raster /= torch.sqrt((raster ** 2).sum(dim=1, keepdim=True))
+        raster /= torch.sqrt((raster**2).sum(dim=1, keepdim=True))
 
     D = np.empty((T, T), dtype=np.float32)
     C = np.empty((T, T), dtype=np.float32)
@@ -318,13 +343,13 @@ def calc_corr_decent_pair(
         raster_a.T, dtype=torch.float32, device=device, requires_grad=False
     )
     # normalize over depth for normalized (uncentered) xcorrs
-    raster_a /= torch.sqrt((raster_a ** 2).sum(dim=1, keepdim=True))
+    raster_a /= torch.sqrt((raster_a**2).sum(dim=1, keepdim=True))
     image = raster_a[:, None, None, :]  # T11D - NCHW
     raster_b = torch.tensor(
         raster_b.T, dtype=torch.float32, device=device, requires_grad=False
     )
     # normalize over depth for normalized (uncentered) xcorrs
-    raster_b /= torch.sqrt((raster_b ** 2).sum(dim=1, keepdim=True))
+    raster_b /= torch.sqrt((raster_b**2).sum(dim=1, keepdim=True))
     weights = raster_b[:, None, None, :]  # T11D - OIHW
 
     D = np.empty((Ta, Tb), dtype=np.float32)
