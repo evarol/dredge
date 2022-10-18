@@ -21,6 +21,7 @@ def register_rigid(
     robust_sigma=0.0,
     denoise_sigma=0.1,
     corr_threshold=0.0,
+    adaptive_mincorr_percentile=None,
     normalized=True,
     destripe=False,
     max_dt=None,
@@ -70,6 +71,7 @@ def register_rigid(
         batch_size=batch_size,
         normalized=normalized,
         max_dt=max_dt,
+        adaptive_mincorr_percentile=adaptive_mincorr_percentile,
     )
     extra = dict(D=D, C=C)
 
@@ -188,7 +190,9 @@ def register_nonrigid(
         for k, loc in enumerate(locs):
             windows[k, :] = norm.pdf(np.arange(D), loc=loc, scale=scale)
             domain_large_enough = np.flatnonzero(windows[k, :] > 1e-5)
-            slices.append(slice(domain_large_enough[0], domain_large_enough[-1]))
+            slices.append(
+                slice(domain_large_enough[0], domain_large_enough[-1])
+            )
         windows /= windows.sum(axis=0, keepdims=True)
 
         # torch versions on device
@@ -402,9 +406,9 @@ def cheap_anscombe_denoising(
 
     z_inverse_anscombe = (
         (z_anscombe_denoised / 2.0) ** 2
-        + 0.25 * np.sqrt(1.5) * z_anscombe_denoised ** -1
-        - (11.0 / 8.0) * z_anscombe_denoised ** -2
-        + (5.0 / 8.0) * np.sqrt(1.5) * z_anscombe_denoised ** -3
+        + 0.25 * np.sqrt(1.5) * z_anscombe_denoised**-1
+        - (11.0 / 8.0) * z_anscombe_denoised**-2
+        + (5.0 / 8.0) * np.sqrt(1.5) * z_anscombe_denoised**-3
         - (1.0 / 8.0)
     )
 

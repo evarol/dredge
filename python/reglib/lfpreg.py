@@ -59,6 +59,7 @@ def register_rigid(
     disp=None,
     batch_size=32,
     step_size=1,
+    adaptive_mincorr_percentile=None,
 ):
     """Rigid LFP registration
 
@@ -80,6 +81,8 @@ def register_rigid(
         batch_size=batch_size,
         step_size=step_size,
     )
+    if adaptive_mincorr_percentile is not None:
+        mincorr = np.percentile(np.diagonal(C, 1), adaptive_mincorr_percentile)
     p = psolvecorr(D, C, mincorr=mincorr)
     return p
 

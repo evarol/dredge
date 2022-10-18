@@ -14,6 +14,7 @@ def register_raster_rigid(
     mincorr=0.0,
     disp=None,
     robust_sigma=0.0,
+    adaptive_mincorr_percentile=None,
     normalized=True,
     max_dt=None,
     batch_size=8,
@@ -42,6 +43,8 @@ def register_raster_rigid(
         device=device,
         pbar=pbar,
     )
+    if adaptive_mincorr_percentile is not None:
+        mincorr = np.percentile(np.diagonal(C, 1), adaptive_mincorr_percentile)
     p = psolvecorr(
         D, C, mincorr=mincorr, robust_sigma=robust_sigma, max_dt=max_dt
     )
