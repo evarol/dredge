@@ -414,6 +414,7 @@ def online_register_rigid(
     disp=None,
     batch_size=32,
     device=None,
+    adaptive_mincorr_percentile=None,
 ):
     """Online rigid registration
 
@@ -434,6 +435,10 @@ def online_register_rigid(
         device=device,
         pbar=True,
     )
+    if adaptive_mincorr_percentile:
+        mincorr = np.percentile(
+            np.diagonal(C00, 1), adaptive_mincorr_percentile
+        )
     p0 = psolvecorr(D00, C00, mincorr=mincorr)
 
     # -- loop
@@ -455,6 +460,10 @@ def online_register_rigid(
             batch_size=batch_size,
             device=device,
         )
+        if adaptive_mincorr_percentile:
+            mincorr = np.percentile(
+                np.diagonal(C11, 1), adaptive_mincorr_percentile
+            )
         p1 = psolveonline(D01, C01, D11, C11, p0, mincorr)
         ps.append(p1)
 
