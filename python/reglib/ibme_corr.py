@@ -122,7 +122,7 @@ def psolvecorr(
     if robust_sigma is not None and robust_sigma > 0:
         idx = slice(None)
         for _ in trange(robust_iter, desc="robust lsqr"):
-            p, *_ = sparse.linalg.lsqr(A[idx], V[idx])
+            p, *_ = sparse.linalg.lsmr(A[idx], V[idx])
             idx = np.flatnonzero(np.abs(zscore(A @ p - V)) <= robust_sigma)
     else:
         p, *_ = sparse.linalg.lsmr(A, V)
@@ -401,11 +401,11 @@ def psolveonline(D01, C01, D11, C11, p0, mincorr=0, prior_lambda=0):
     ones1 = np.ones(n1)
     U = sparse.coo_matrix((ones1, (range(n1), i1)), shape=(n1, t1))
     V = sparse.coo_matrix((ones1, (range(n1), j1)), shape=(n1, t1))
-    W = sparse.coo_matrix((ones0, (range(n0), j0)), shape=(n0, t1))
+    W = sparse.coo_matrix((np.sqrt(2) * ones0, (range(n0), j0)), shape=(n0, t1))
 
     # build basic lsqr problem
     A = sparse.vstack([U - V, W]).tocsc()
-    b = np.concatenate([D11[i1, j1], -(D01 - p0[:, None])[i0, j0]])
+    b = np.concatenate([D11[i1, j1], -np.sqrt(2) * (D01 - p0[:, None])[i0, j0]])
 
     # add in prior if requested
     if prior_lambda > 0:

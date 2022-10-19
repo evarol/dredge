@@ -296,7 +296,7 @@ def warp_nonrigid(depths, times, dispmap, depth_domain=None, time_domain=None):
 
 
 def warp_rigid(depths, times, time_domain, p):
-    warps = interp1d(time_domain + 0.5, p, fill_value="extrapolate")(times)
+    warps = interp1d(time_domain, p, fill_value="extrapolate")(times)
     depths_reg = depths - warps
     depths_reg -= depths_reg.min()
     return depths_reg
