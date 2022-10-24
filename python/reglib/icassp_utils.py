@@ -7,6 +7,7 @@ import pandas as pd
 from scipy.interpolate import interp1d
 from tqdm.auto import tqdm
 from joblib import Parallel, delayed
+from sklearn.metrics.pairwise import cosine_similarity
 
 from scipy.io import loadmat
 from collections import namedtuple
@@ -28,7 +29,6 @@ def load_chanmap(chanmap_mat):
 
 
 def template_based_registration(y, t, a, n_iter=10, disp=None, batch_size=32, device=None):
-    # running estimate of total displacement
     p = 0
 
     # keep initial depths around
@@ -45,9 +45,10 @@ def template_based_registration(y, t, a, n_iter=10, disp=None, batch_size=32, de
 
         # find best displacements from the template for all time bins
         # and add to our total displacement estimate
-        p = p + ibme_corr.calc_corr_decent_pair(
+        D, C = ibme_corr.calc_corr_decent_pair(
             r_mean, r, disp=disp, batch_size=batch_size, device=device
         )
+        p = p - D.squeeze()
 
         # interpolate `p` to displace the underlying points
         y = ibme.warp_rigid(y0, t, tt, p)
@@ -98,14 +99,15 @@ def entropy_1d(y, bin_size_um=1):
 
 def total_corr(y, t, a):
     r, dd, tt = ibme.fast_raster(a, y, t)
-    corr = np.corrcoef(r.T)
+    # corr = np.corrcoef(r.T)
+    corr = cosine_similarity(r.T)
     assert corr.shape == (*tt.shape, *tt.shape)
     return np.abs(corr).sum() / corr.size
 
 
 def total_std(y, t, a):
     r, dd, tt = ibme.fast_raster(a, y, t)
-    return r.std(axis=1).mean()
+    return (r.mean(axis=1) * r.std(axis=1)).sum() / (r.mean(axis=1).sum())
 
 
 def mi(ri, rj, pi, pj, bins):
@@ -131,7 +133,7 @@ def total_mi(y, t, a, nbins=50, dt=1):
     return np.mean(mis)
 
 
-def showmetrics(t, a, ys, names):
+def showmetrics(t, a, ys, names, ):
     records = []
     for n, y in zip(names, ys):
         records.append(
