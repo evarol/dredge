@@ -7,6 +7,7 @@ import pandas as pd
 from scipy.interpolate import interp1d
 from tqdm.auto import tqdm
 from joblib import Parallel, delayed
+import colorcet as cc
 
 from scipy.io import loadmat
 from collections import namedtuple
@@ -27,8 +28,11 @@ def load_chanmap(chanmap_mat):
     return np.c_[h["xcoords"].squeeze(), h["ycoords"].squeeze()]
 
 
-def template_based_registration(y, t, a, n_iter=10, disp=None, batch_size=32, device=None):
+def template_based_registration(
+    y, t, a, n_iter=10, disp=None, batch_size=32, device=None
+):
     # running estimate of total displacement
+    # initialized with a scalar 0 but will become a vector below
     p = 0
 
     # keep initial depths around
@@ -78,7 +82,7 @@ def show_dc(D, C):
     aa, ab = axes
 
     dmax = np.abs(D).max()
-    im = aa.imshow(D, vmin=-dmax, vmax=dmax, cmap=plt.cm.bwr)
+    im = aa.imshow(D, vmin=-dmax, vmax=dmax, cmap=plt.cm.seismic)
     plt.colorbar(im, ax=aa, shrink=0.3, label="displacement (um)")
 
     im = ab.imshow(C, vmin=0, cmap=plt.cm.magma)
@@ -179,7 +183,11 @@ def rrasters(ys, names, t, a):
         print(name, flush=True)
         r, dd, tt = ibme.fast_raster(a, y, t)
         ax.imshow(
-            r, vmax=15, extent=[tt[0], tt[-1], dd[0], dd[-1]], aspect="auto"
+            r,
+            vmax=15,
+            extent=[tt[0], tt[-1], dd[0], dd[-1]],
+            aspect="auto",
+            pal=gpal["apcm"],
         )
         ax.set_ylabel(f"{name} depth (\\textmu{{}}m)")
     ax.set_xlabel("time (s)")
@@ -239,11 +247,7 @@ def hero(
     )
 
     left_wratios = np.array(
-        [0.5] * 4
-        + [1]
-        + [0.5] * 4
-        + [1]
-        + [1.55, 0.1, 0.25, 0.1]
+        [0.5] * 4 + [1] + [0.5] * 4 + [1] + [1.55, 0.1, 0.25, 0.1]
     )
     right_wratios = np.array([1] * 5 + [tinywpad / 2, tinywpad / 2] + [1] * 5)
 
@@ -279,7 +283,7 @@ def hero(
         vmax=15,
         # extent=[tt[0], tt[-1] - 1, dd[0], dd[-1]],
         aspect="auto",
-        cmap="viridis",
+        cmap=gpal["apcm"],
         # origin="lower",
     )
     plt.colorbar(im, cax=axes["b"], label="amplitude (s.u.)", shrink=0.5)
@@ -292,21 +296,28 @@ def hero(
     axes["a"].set_xticks([0] + tstarts + [tt[-1]])
     axes["a"].set_xlabel("time (s)", labelpad=-rem)
     axes["a"].plot(
-        tt_ks, 800 + (dshift - dshift.mean()), color="w", label="KS", lw=1
+        tt_ks,
+        800 + (dshift - dshift.mean()),
+        color=gpal["aplines"][0],
+        label="KS",
+        lw=1,
+        zorder=2,
     )
     axes["a"].plot(
         tt_csd,
         1600 + 20 * (p_csd - p_csd.mean()),
-        color=plt.cm.RdPu(0.5),
+        color=gpal["aplines"][1],
         label="Ours (CSD)",
         lw=1,
+        zorder=2,
     )
     axes["a"].plot(
         tt_ap,
         2400 + (p_ap - p_ap.mean()),
-        color=plt.cm.RdPu(0.2),
+        color=gpal["aplines"][2],
         label="Ours (AP)",
         lw=1,
+        zorder=2,
     )
     axes["a"].legend(ncol=3, loc="lower left", fancybox=False, framealpha=1)
 
@@ -316,7 +327,7 @@ def hero(
         vmax=15,
         # extent=[tt[0], tt[-1], dd_csd[0], dd_csd[-1]],
         aspect="auto",
-        cmap="viridis",
+        cmap=gpal["apcm"],
         # origin="lower",
     )
     axes["p"].set_yticks([])
@@ -328,18 +339,18 @@ def hero(
         vmax=15,
         # extent=[tt[0], tt[-1], dd_ap[0], dd_ap[-1]],
         aspect="auto",
-        cmap="viridis",
+        cmap=gpal["apcm"],
         # origin="lower",
     )
     axes["q"].set_yticks([])
     axes["q"].set_ylabel("Ours (AP) reg.\\ depth (\\textmu{{}}m)")
     axes["q"].set_xticks([0] + tstarts + [r_ap.shape[1] - 1])
-    axes["q"].set_xlabel("time (s)", labelpad=-rem)
+    axes["q"].set_xlabel("time (s, 1Hz sampling)", labelpad=-rem)
 
-    for k in "pq":
+    for k in "apq":
         for t0 in tstarts:
-            axes[k].axvline(t0, color="w", ls=":", lw=1)
-            axes[k].axvline(t0 + 40, color="w", ls=":", lw=1)
+            axes[k].axvline(t0, color=gpal["vline"], ls=":", lw=1)
+            axes[k].axvline(t0 + 40, color=gpal["vline"], ls=":", lw=1)
 
     # panel C: metrics
     names = ["None", "KS", "AP", "CSD"]
@@ -354,7 +365,7 @@ def hero(
         dsets = np.sort(np.unique(rows["dataset"]))
         metname = rows["metric"].values[rows["met"].values == met][0]
         vals = []
-        for ds in dsets:
+        for ds, col in zip(dsets, gpal["metlines"]):
             dsrows = rows[rows["dataset"] == ds]
             nas_vals = [
                 (na, dsrows["value"].values[dsrows["method"].values == na][0])
@@ -363,7 +374,7 @@ def hero(
             ]
             thenames, thevals = map(list, zip(*nas_vals))
             vals += thevals
-            axes[k].plot(thevals, label=ds)
+            axes[k].plot(thevals, label=ds, color=col)
         # axes[k].plot(vals, color="k", marker=".")
         axes[k].set_xticks(range(len(names)), names, rotation=90)
         axes[k].set_yticks(
@@ -378,7 +389,7 @@ def hero(
     chunk0 = csd[sl]
     vmax = np.percentile(np.abs(chunk0), 99)
     axes["u"].imshow(
-        chunk0.T, aspect="auto", cmap=plt.cm.bone, vmin=-vmax, vmax=vmax
+        chunk0.T, aspect="auto", cmap=gpal["csdcm"], vmin=-vmax, vmax=vmax
     )
     axes["u"].set_xticks(
         (0, chunk0.shape[0] - 1),
@@ -386,20 +397,20 @@ def hero(
     )
     axes["u"].set_yticks([0, csd.shape[1] - 1], [0, 3820])
     axes["u"].set_ylabel("depth (\\textmu{{}}m)", labelpad=-2 * rem)
-    axes["u"].set_xlabel("time (s)", labelpad=-rem)
+    axes["u"].set_xlabel("time (s, 250Hz sampling)", labelpad=-rem)
     axes["u"].plot(
         csd.shape[1] / 4 + p_ks_250[sl] - p_ks_250[sl].mean(),
-        color="w",
+        color=gpal["aplines"][0],
         lw=0.5,
     )
     axes["u"].plot(
         2 * csd.shape[1] / 4 + p_csd[sl] - p_csd[sl].mean(),
-        color=plt.cm.RdPu(0.5),
+        color=gpal["aplines"][1],
         lw=0.5,
     )
     axes["u"].plot(
         3 * csd.shape[1] / 4 + p_ap_250[sl] - p_ap_250[sl].mean(),
-        color=plt.cm.RdPu(0.2),
+        color=gpal["aplines"][2],
         lw=0.5,
     )
 
@@ -407,27 +418,27 @@ def hero(
     chunk1 = csd[sl]
     vmax = np.percentile(np.abs(chunk1.T), 99)
     axes["v"].imshow(
-        chunk1.T, aspect="auto", cmap=plt.cm.bone, vmin=-vmax, vmax=vmax
+        chunk1.T, aspect="auto", cmap=gpal["csdcm"], vmin=-vmax, vmax=vmax
     )
     axes["v"].set_xticks(
         (0, chunk1.shape[0] - 1),
         (tstarts[1], tstarts[1] + 40),
     )
     axes["v"].set_yticks([])
-    axes["v"].set_xlabel("time (s)", labelpad=-rem)
+    axes["v"].set_xlabel("time (s, 250Hz sampling)", labelpad=-rem)
     axes["v"].plot(
         csd.shape[1] / 4 + p_ks_250[sl] - p_ks_250[sl].mean(),
-        color="w",
+        color=gpal["aplines"][0],
         lw=0.5,
     )
     axes["v"].plot(
         2 * csd.shape[1] / 4 + p_csd[sl] - p_csd[sl].mean(),
-        color=plt.cm.RdPu(0.5),
+        color=gpal["aplines"][1],
         lw=0.5,
     )
     axes["v"].plot(
         3 * csd.shape[1] / 4 + p_ap_250[sl] - p_ap_250[sl].mean(),
-        color=plt.cm.RdPu(0.2),
+        color=gpal["aplines"][2],
         lw=0.5,
     )
 
@@ -459,16 +470,58 @@ def hero(
 # B: Adaptive threshold selection. Plot estimated motion traces on top of CSD chunk for range of parameters + adaptive selected parameter?
 # C (?): prior? show it removes some glitches and does not cause shrinkage?
 
-mos_algo = """\
-aa.lllmm.ww
-aa.lll...ww
-aa.lllnn.ww
-...........
-bb.oo.qq.xx
-bbgoo.qq.xx
-bbgpp.qq.xx
-bb.pp.qq.xx
+mos_algo_left = """\
+aa.lll.mm.w
+aa.lll.mm.w
+aa.lll.mm.w
+...lll....w
+bb.lll.nn.w
+bb.lll.nn..
+bb.lll.nn.x
+..........x
+.ooooo.qq.x
+gooooo.qq.x
+gppppp.qq.x
+.ppppp.qq.x
 """
+
+
+def rolling_mean_std(x, w_rad=5):
+    mean = []
+    std = []
+    for i in range(w_rad, len(x) - w_rad):
+        win = x[i - w_rad : i + w_rad]
+        mean.append(np.mean(win))
+        std.append(np.std(win))
+    mean = [mean[0]] * w_rad + mean + [mean[-1]] * w_rad
+    std = [std[0]] * w_rad + std + [std[-1]] * w_rad
+    return np.array(mean), np.array(std)
+
+
+def ciline(mean, std, ax, color=None, plot_kwargs=dict(lw=1)):
+    ax.plot(mean, color=color, **plot_kwargs)
+    ax.fill_between(
+        np.arange(len(mean)), mean - std, mean + std, color=color, alpha=0.5
+    )
+
+
+pal0 = dict(
+    apcm=plt.cm.viridis,
+    csdcm=plt.cm.bone,
+    aplines=["w", plt.cm.RdPu(0.5), plt.cm.RdPu(0.2)],
+    vline="w",
+)
+
+pal1 = dict(
+    apcm=plt.cm.binary,
+    # csdcm=plt.cm.bone,
+    csdcm=sns.dark_palette("#9cf", as_cmap=True),
+    aplines=["violet", "red", "orange"],
+    metlines=np.array(sns.color_palette("husl", 8))[[1, 3, 5]],
+    vline="k",
+)
+
+gpal = pal1
 
 
 def algo(
@@ -483,55 +536,82 @@ def algo(
     p2_full_nolambd,
     p9_full,
     p9_full_nolambd,
+    r,
+    c2p_ap,
+    c_ad,
+    p_ad,
+    csdchunk,
+    c2p_csd,
+    c_ad_csd,
+    p_ad_csd,
 ):
     rem = plt.rcParams["font.size"]
-    paw = [1, 1]
-    pbw = [2, 1, wpad, 1, 1]
-    pcw = [1, 1]
+    paw = [0.25, 1.75]
+    pbw = [1, 1, 0.5, 0.75, 1, 1]
 
-    fig, axes = plt.subplot_mosaic(
-        mos_algo,
-        figsize=(7, 4),
+    # fig = plt.figure(constrained_layout=True, figsize=(7, 4))
+    # fig_left, fig_right = fig.subfigures(nrows=1, ncols=2, width_ratios=[5, 2])
+
+    fig, axes_left = plt.subplot_mosaic(
+        mos_algo_left,
         gridspec_kw=dict(
             hspace=0,
             wspace=0,
-            width_ratios=paw + [wpad] + pbw + [1] + pcw,
-            height_ratios=[1, 0.33, 1, 0.5, 2 / 3, 1 / 3, 1 / 3, 2 / 3],
+            width_ratios=paw + [wpad] + pbw + [0.75, 3],
+            # height_ratios=,
         ),
+        figsize=(7, 4),
     )
+
+    # axes_right = fig_right.subplot_mosaic(
+    #     mos_algo_right,
+    #     gridspec_kw=dict(
+    #         height_ratios=[1, 0.1, 1],
+    #     )
+    # )
+
+    axes = {**axes_left}
 
     # panel B: glitches, prior, shrinkage
     axes["l"].imshow(
-        ap_glitch[100:200], aspect="auto", vmax=20, interpolation="nearest"
+        ap_glitch[100:200],
+        aspect="auto",
+        vmax=20,
+        interpolation="nearest",
+        cmap=gpal["apcm"],
     )
     axes["l"].plot(
         ap_glitch[100:200].shape[0] / 2 + p_glitch0,
         lw=1,
-        color=plt.cm.RdPu(0.5),
+        color=gpal["aplines"][1],
         label="$\\lambda\\to\\infty$",
     )
     axes["l"].plot(
         ap_glitch[100:200].shape[0] / 2 + p_glitch1,
         lw=1,
         ls="--",
-        color=plt.cm.RdPu(0.2),
+        color=gpal["aplines"][2],
         label="$\\lambda=1$",
     )
     axes["l"].legend(fancybox=False, loc="upper right", framealpha=1)
     axes["l"].set_yticks([])
     axes["l"].set_ylabel("depth (detail zoom)")
     axes["l"].set_xticks([0, ap_glitch.shape[1] - 1], [0, ap_glitch.shape[1]])
-    axes["l"].set_xlabel("time (s)", labelpad=-0.8 * rem)
+    axes["l"].set_xlabel("time (s, 1Hz sampling)", labelpad=-0.8 * rem)
 
     im = axes["m"].imshow(Cglitch, vmin=0, cmap=plt.cm.magma)
-    plt.colorbar(im, ax=axes["m"], shrink=0.7, label="correlation")
+    cbar = plt.colorbar(im, ax=axes["m"], shrink=0.9, label="correlation")
+    cbar.ax.set_yticks([0, 1])
+    cbar.ax.yaxis.set_label_coords(3.5, 0.5)
     axes["m"].set_xticks([0, ap_glitch.shape[1] - 1], [0, ap_glitch.shape[1]])
     axes["m"].set_yticks([0, ap_glitch.shape[1] - 1], [0, ap_glitch.shape[1]])
     axes["m"].set_xlabel("time (s)", labelpad=-0.8 * rem)
     axes["m"].set_ylabel("time (s)", labelpad=-1.6 * rem)
 
     im = axes["n"].imshow(Dglitch, vmin=-50, vmax=50, cmap=plt.cm.seismic)
-    plt.colorbar(im, ax=axes["n"], shrink=0.7, label="displacement")
+    cbar = plt.colorbar(im, ax=axes["n"], shrink=0.9, label="displacment (\\textmu{{}}m)")
+    cbar.ax.set_yticks([-50, 50])
+    cbar.ax.yaxis.set_label_coords(3.5, 0.5)
     axes["n"].set_xticks([0, ap_glitch.shape[1] - 1], [0, ap_glitch.shape[1]])
     axes["n"].set_yticks([0, ap_glitch.shape[1] - 1], [0, ap_glitch.shape[1]])
     axes["n"].set_xlabel("time (s)", labelpad=-0.8 * rem)
@@ -544,16 +624,16 @@ def algo(
     # axes["p"].scatter(np.arange(len(p9_full)), p9_full_nolambd, s=2, marker=".", facecolor=c9(0.5))
     # axes["p"].scatter(np.arange(len(p9_full)), p9_full, s=1, marker=".", facecolor=c9(0.2))
     axes["o"].plot(
-        np.arange(len(p2_full)), -p2_full_nolambd, lw=1, color=c2(0.5)
+        np.arange(len(p2_full)), -p2_full_nolambd, lw=1, color="red"
     )
     axes["o"].plot(
-        np.arange(len(p2_full)), -p2_full, lw=1, ls=":", color=c2(0.2)
+        np.arange(len(p2_full)), -p2_full, lw=1, color=c2(0.5)
     )
     axes["p"].plot(
-        np.arange(len(p9_full)), -p9_full_nolambd, lw=1, color=c9(0.5)
+        np.arange(len(p9_full)), -p9_full_nolambd, lw=1, color="red"
     )
     axes["p"].plot(
-        np.arange(len(p9_full)), -p9_full, lw=1, ls=":", color=c9(0.2)
+        np.arange(len(p9_full)), -p9_full, lw=1, color=c9(0.5)
     )
     axes["o"].set_xticks([])
     axes["p"].set_xticks([])
@@ -561,7 +641,8 @@ def algo(
     axes["o"].set_yticks([-20, 0, 20])
     axes["p"].set_yticks([-20, 0, 20])
     axes["g"].axis("off")
-    axes["g"].text(0.5, 0.15, "depth (\\textmu{{}}m)", rotation=90)
+    axes["g"].text(-1.75, 0.12, "displacment (\\textmu{{}}m)", rotation=90)
+    # axes["g"].set_ylabel("depth (\\textmu{{}}m)")
 
     axes["q"].scatter(
         np.abs(p2_full_nolambd),
@@ -589,14 +670,83 @@ def algo(
     axes["q"].legend(loc="lower right", fancybox=False)
     axes["q"].set_xticks([0, 49], [0, 50])
     axes["q"].set_xlabel(
-        "displacment, $\\lambda\\to\\infty$", labelpad=-0.8 * rem
+        "abs.\\ displacment, $\\lambda\\to\\infty$", labelpad=-0.8 * rem
     )
     axes["q"].set_yticks([0, 49], [0, 50])
-    axes["q"].set_ylabel("displacment, $\\lambda=1$", labelpad=-1.2 * rem)
+    axes["q"].set_ylabel("abs.\\ displacment, $\\lambda=1$", labelpad=-1.2 * rem)
 
     axes["a"].text(0.5, 0.5, "timings in AP (us v KS)", ha="center")
     axes["b"].text(0.5, 0.5, "timings in CSD (online/offline)", ha="center")
-    axes["w"].text(0.5, 0.5, "adaptive threshold in AP", ha="center")
-    axes["x"].text(0.5, 0.5, "adaptive threshold in CSD", ha="center")
+
+    # panel : adaptive mincorr
+    r_show = r[250:600, 750:1250]
+    axes["w"].imshow(r_show, cmap=gpal["apcm"], aspect="auto", vmax=15)
+    axes["w"].set_yticks([0, r_show.shape[0] - 1], [250, 600])
+    axes["w"].set_xticks([0, r_show.shape[1] - 1], [750, 1250])
+    pal = sns.color_palette("husl", len(c2p_ap) + 1)
+    offsets = np.linspace(50, 600 - 250 - 50, num=len(pal))
+    for (c, p), col, offset in zip(
+        sorted({**c2p_ap, **{c_ad: p_ad}}.items(), key=lambda x: x[0]),
+        pal,
+        offsets,
+    ):
+        label = f"${c:0.2f}^*$" if c == c_ad else f"{c:0.2f}"
+        axes["w"].plot(
+            np.arange(r_show.shape[1]),
+            offset + p[750:1250],
+            color="w",
+            lw=2,
+            zorder=1,
+        )
+        axes["w"].scatter(
+            np.arange(r_show.shape[1]),
+            offset + p[750:1250],
+            color=col,
+            s=2,
+            marker=".",
+            linewidths=0,
+            label=label,
+            zorder=2,
+        )
+        # pm, ps = rolling_mean_std(p)
+        # ciline(offset + pm[750:1250], 10 * ps[750:1250], ax=axes["w"], plot_kwargs=dict(lw=1, label=label), color=col)
+    axes["w"].legend(loc="upper left", framealpha=1, fancybox=False, title="min corr.\\ $\\theta$")
+    axes["w"].set_ylabel("depth (\\textmu{{}}m)", labelpad=-2 * rem)
+    axes["w"].set_xlabel("time (s, 1Hz sampling)", labelpad=-rem)
+
+    csdchunk = csdchunk[20 * 250:]
+    axes["x"].imshow(csdchunk.T, cmap=gpal["csdcm"], aspect="auto")
+    axes["x"].set_yticks([0, csdchunk.shape[1] - 1], [0, 3820])
+    axes["x"].set_xticks([0, csdchunk.shape[0] - 1], [20, 40])
+    pal = sns.color_palette("husl", len(c2p_csd) + 1)
+    offsets = np.linspace(40, 192 - 40, num=len(pal))
+    for (c, p), col, offset in zip(
+        sorted({**c2p_csd, **{c_ad_csd: p_ad_csd}}.items(), key=lambda x: x[0]),
+        pal,
+        offsets,
+    ):
+        label = f"${c:0.2f}^*$" if c == c_ad_csd else f"{c:0.2f}"
+        axes["x"].plot(
+            np.arange(csdchunk.shape[0]),
+            offset + p[20 * 250:],
+            color="w",
+            lw=2,
+            zorder=1,
+        )
+        axes["x"].scatter(
+            np.arange(csdchunk.shape[0]),
+            offset + p[20 * 250:],
+            color=col,
+            s=2,
+            marker=".",
+            linewidths=0,
+            label=label,
+            zorder=2,
+        )
+        # pm, ps = rolling_mean_std(p)
+        # ciline(offset + pm[750:1250], 10 * ps[750:1250], ax=axes["x"], plot_kwargs=dict(lw=1, label=label), color=col)
+    axes["x"].legend(loc="upper left", framealpha=1, fancybox=False, title="min corr.\\ $\\theta$")
+    axes["x"].set_ylabel("depth (\\textmu{{}}m)", labelpad=-2 * rem)
+    axes["x"].set_xlabel("time (s, 250Hz sampling)", labelpad=-rem)
 
     return fig, axes
