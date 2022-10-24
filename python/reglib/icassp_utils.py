@@ -8,6 +8,7 @@ from scipy.interpolate import interp1d
 from tqdm.auto import tqdm
 from joblib import Parallel, delayed
 import colorcet as cc
+from sklearn.metrics.pairwise import cosine_similarity
 
 from scipy.io import loadmat
 from collections import namedtuple
@@ -31,8 +32,6 @@ def load_chanmap(chanmap_mat):
 def template_based_registration(
     y, t, a, n_iter=10, disp=None, batch_size=32, device=None
 ):
-    # running estimate of total displacement
-    # initialized with a scalar 0 but will become a vector below
     p = 0
 
     # keep initial depths around
@@ -49,9 +48,10 @@ def template_based_registration(
 
         # find best displacements from the template for all time bins
         # and add to our total displacement estimate
-        p = p + ibme_corr.calc_corr_decent_pair(
+        D, C = ibme_corr.calc_corr_decent_pair(
             r_mean, r, disp=disp, batch_size=batch_size, device=device
         )
+        p = p - D.squeeze()
 
         # interpolate `p` to displace the underlying points
         y = ibme.warp_rigid(y0, t, tt, p)
@@ -102,14 +102,15 @@ def entropy_1d(y, bin_size_um=1):
 
 def total_corr(y, t, a):
     r, dd, tt = ibme.fast_raster(a, y, t)
-    corr = np.corrcoef(r.T)
+    # corr = np.corrcoef(r.T)
+    corr = cosine_similarity(r.T)
     assert corr.shape == (*tt.shape, *tt.shape)
     return np.abs(corr).sum() / corr.size
 
 
 def total_std(y, t, a):
     r, dd, tt = ibme.fast_raster(a, y, t)
-    return r.std(axis=1).mean()
+    return (r.mean(axis=1) * r.std(axis=1)).sum() / (r.mean(axis=1).sum())
 
 
 def mi(ri, rj, pi, pj, bins):
@@ -135,7 +136,12 @@ def total_mi(y, t, a, nbins=50, dt=1):
     return np.mean(mis)
 
 
-def showmetrics(t, a, ys, names):
+def showmetrics(
+    t,
+    a,
+    ys,
+    names,
+):
     records = []
     for n, y in zip(names, ys):
         records.append(
@@ -609,7 +615,9 @@ def algo(
     axes["m"].set_ylabel("time (s)", labelpad=-1.6 * rem)
 
     im = axes["n"].imshow(Dglitch, vmin=-50, vmax=50, cmap=plt.cm.seismic)
-    cbar = plt.colorbar(im, ax=axes["n"], shrink=0.9, label="displacment (\\textmu{{}}m)")
+    cbar = plt.colorbar(
+        im, ax=axes["n"], shrink=0.9, label="displacment (\\textmu{{}}m)"
+    )
     cbar.ax.set_yticks([-50, 50])
     cbar.ax.yaxis.set_label_coords(3.5, 0.5)
     axes["n"].set_xticks([0, ap_glitch.shape[1] - 1], [0, ap_glitch.shape[1]])
@@ -626,15 +634,11 @@ def algo(
     axes["o"].plot(
         np.arange(len(p2_full)), -p2_full_nolambd, lw=1, color="red"
     )
-    axes["o"].plot(
-        np.arange(len(p2_full)), -p2_full, lw=1, color=c2(0.5)
-    )
+    axes["o"].plot(np.arange(len(p2_full)), -p2_full, lw=1, color=c2(0.5))
     axes["p"].plot(
         np.arange(len(p9_full)), -p9_full_nolambd, lw=1, color="red"
     )
-    axes["p"].plot(
-        np.arange(len(p9_full)), -p9_full, lw=1, color=c9(0.5)
-    )
+    axes["p"].plot(np.arange(len(p9_full)), -p9_full, lw=1, color=c9(0.5))
     axes["o"].set_xticks([])
     axes["p"].set_xticks([])
     axes["p"].set_xlabel("time")
@@ -673,7 +677,9 @@ def algo(
         "abs.\\ displacment, $\\lambda\\to\\infty$", labelpad=-0.8 * rem
     )
     axes["q"].set_yticks([0, 49], [0, 50])
-    axes["q"].set_ylabel("abs.\\ displacment, $\\lambda=1$", labelpad=-1.2 * rem)
+    axes["q"].set_ylabel(
+        "abs.\\ displacment, $\\lambda=1$", labelpad=-1.2 * rem
+    )
 
     axes["a"].text(0.5, 0.5, "timings in AP (us v KS)", ha="center")
     axes["b"].text(0.5, 0.5, "timings in CSD (online/offline)", ha="center")
@@ -710,32 +716,39 @@ def algo(
         )
         # pm, ps = rolling_mean_std(p)
         # ciline(offset + pm[750:1250], 10 * ps[750:1250], ax=axes["w"], plot_kwargs=dict(lw=1, label=label), color=col)
-    axes["w"].legend(loc="upper left", framealpha=1, fancybox=False, title="min corr.\\ $\\theta$")
+    axes["w"].legend(
+        loc="upper left",
+        framealpha=1,
+        fancybox=False,
+        title="min corr.\\ $\\theta$",
+    )
     axes["w"].set_ylabel("depth (\\textmu{{}}m)", labelpad=-2 * rem)
     axes["w"].set_xlabel("time (s, 1Hz sampling)", labelpad=-rem)
 
-    csdchunk = csdchunk[20 * 250:]
+    csdchunk = csdchunk[20 * 250 :]
     axes["x"].imshow(csdchunk.T, cmap=gpal["csdcm"], aspect="auto")
     axes["x"].set_yticks([0, csdchunk.shape[1] - 1], [0, 3820])
     axes["x"].set_xticks([0, csdchunk.shape[0] - 1], [20, 40])
     pal = sns.color_palette("husl", len(c2p_csd) + 1)
     offsets = np.linspace(40, 192 - 40, num=len(pal))
     for (c, p), col, offset in zip(
-        sorted({**c2p_csd, **{c_ad_csd: p_ad_csd}}.items(), key=lambda x: x[0]),
+        sorted(
+            {**c2p_csd, **{c_ad_csd: p_ad_csd}}.items(), key=lambda x: x[0]
+        ),
         pal,
         offsets,
     ):
         label = f"${c:0.2f}^*$" if c == c_ad_csd else f"{c:0.2f}"
         axes["x"].plot(
             np.arange(csdchunk.shape[0]),
-            offset + p[20 * 250:],
+            offset + p[20 * 250 :],
             color="w",
             lw=2,
             zorder=1,
         )
         axes["x"].scatter(
             np.arange(csdchunk.shape[0]),
-            offset + p[20 * 250:],
+            offset + p[20 * 250 :],
             color=col,
             s=2,
             marker=".",
@@ -745,7 +758,12 @@ def algo(
         )
         # pm, ps = rolling_mean_std(p)
         # ciline(offset + pm[750:1250], 10 * ps[750:1250], ax=axes["x"], plot_kwargs=dict(lw=1, label=label), color=col)
-    axes["x"].legend(loc="upper left", framealpha=1, fancybox=False, title="min corr.\\ $\\theta$")
+    axes["x"].legend(
+        loc="upper left",
+        framealpha=1,
+        fancybox=False,
+        title="min corr.\\ $\\theta$",
+    )
     axes["x"].set_ylabel("depth (\\textmu{{}}m)", labelpad=-2 * rem)
     axes["x"].set_xlabel("time (s, 250Hz sampling)", labelpad=-rem)
 
