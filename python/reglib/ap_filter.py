@@ -112,7 +112,7 @@ def run_preprocessing(
         rmss = []
         with open(out_bin, "wb") as out:
             for i, s in enumerate(trange(s_start, s_end, fs * chunk_seconds, desc="filter")):
-                chunk = get_chunk(s, min(T_samples, s + fs * chunk_seconds))
+                chunk = get_chunk(s, min(s_end, s + fs * chunk_seconds))
 
                 with noint:
                     rmss.append(rms(chunk.T))
