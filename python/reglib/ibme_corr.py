@@ -443,6 +443,9 @@ def online_register_rigid(
 
     Lower memory and faster for large recordings.
 
+    Arguments:
+    raster : D x T array
+
     Returns:
     p : the vector of estimated displacements
     """
