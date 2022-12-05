@@ -1,48 +1,60 @@
-clear all
+clear
 clc
 close all
 
+
 %% params
-threshold=0.7; %correlation threshold to poor discard pairwise registrations
-subsampling_rate=8; %subsampling rate
-num_sequential=20; %number of sequential registrations to always have
+threshold=0.95; %linkage probability to threshold on (0 to 1)
 temporal_lambda=0; %amount of temporal smoothness
 num_bins=1000; %number of time bins to divide data into
 %% read data
-% data=h5read('Pt02_2.h5','/raster');
-data=h5read('mg29_lfpraster.h5','/raster')';
+% data=h5read('../Pt02_2.h5','/raster');
+data=h5read('../Pt03.h5','/raster')';
 
 %% filter, normalize and resize data
-for i=1:20
-    data=medfilt2(data);
-end
-for t=1:20
-data=zscore(data,[],1);
-data=zscore(data,[],2);
-end
 data=imresize(data,[size(data,1) num_bins]);
+% 
 
 %% register data (data_reg) and output position/motion estimates (p)
-[data_reg,p]=DCreg(data,threshold,subsampling_rate,num_sequential,temporal_lambda);
+tic;[data_reg_corr,p_corr,D_corr,C_corr,D_unthresholded_corr,C_raw_corr]=dredge(data,threshold,temporal_lambda,'corr');corr_time=toc;
+% tic;[data_reg_mi,p_mi,D_mi,C_mi,D_unthresholded_mi,C_raw_mi]=dredge(data,threshold,temporal_lambda,'mi');mi_time=toc;
+disp(['DREDGE-corr time: ' num2str(corr_time)]);
+disp(['DREDGE-mi time: ' num2str(mi_time)]);
 
 %% visualize un-registered + registered raster
 figure('units','normalized','outerposition',[0 0 1 1/3])
-subplot(1,3,1)
-imagesc(data);
+subplot(1,4,1)
+imagesc(data,[quantile(data(:),0.01) quantile(data(:),0.99)]);
 xlabel('Time bins')
 ylabel('Channels')
 set(gca,'FontWeight','bold','FontSize',15,'TickLength',[0 0]);set(gcf,'Color','w');
 title('Unregistered')
-subplot(1,3,2)
-imagesc(data_reg);
+hold on
+plot(100+p_corr,'g.');
+plot(100+p_mi,'m.');
+legend('DREDGE-corr','DREDGE-mi');
+subplot(1,4,2)
+imagesc(data_reg_corr,[quantile(data(:),0.01) quantile(data(:),0.99)]);
 xlabel('Time bins')
 ylabel('Channels')
 set(gca,'FontWeight','bold','FontSize',15,'TickLength',[0 0]);set(gcf,'Color','w');
-title('Registered')
-colormap(othercolor('BuDRd_12'));
-subplot(1,3,3)
-plot(p,'.');
+title('Registered (DREDGE-corr)')
+colormap(flipud(colormap(gray)));
+subplot(1,4,3)
+imagesc(data_reg_mi,[quantile(data(:),0.01) quantile(data(:),0.99)]);
+xlabel('Time bins')
+ylabel('Channels')
+set(gca,'FontWeight','bold','FontSize',15,'TickLength',[0 0]);set(gcf,'Color','w');
+title('Registered (DREDGE-mi)')
+colormap(flipud(colormap(gray)));
+subplot(1,4,4)
+hold on
+plot(p_corr,'.');
+plot(p_mi,'.');
+legend('DREDGE-corr','DREDGE-mi');
 xlabel('Time bins')
 ylabel('Displacement')
 set(gca,'FontWeight','bold','FontSize',15,'TickLength',[0 0]);set(gcf,'Color','w');
 title('Displacement estimate');
+
+
