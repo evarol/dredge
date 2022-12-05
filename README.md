@@ -1,10 +1,6 @@
 ![Demo](https://github.com/evarol/neuropixelsLFPregistration/blob/main/image.png)
-# neuropixelsLFPregistration
-Motion correction using the LFP band of neuropixels
-by Charlie Windolf, Erdem Varol (Columbia University)
-
-In collaboration with Angelique Paulk, Yoav Kfir (MGH)
-
+# DREDge
+Decentralized registration of electrophysiology data
 
 -=MATLAB INSTRUCTIONS=-
 
@@ -26,7 +22,7 @@ See [the README: `python/README.md`](python/README.md).
 Example results from 2 human neuropixels recordings from Paulk et al. (https://www.biorxiv.org/content/10.1101/2021.06.20.449152v2)
 
 
-![Dataset1](https://github.com/evarol/neuropixelsLFPregistration/blob/main/mg29_results.png)
+![Dataset1](https://github.com/evarol/dredge/blob/main/pt03_results.png)
 
-![Dataset2](https://github.com/evarol/neuropixelsLFPregistration/blob/main/pt02_results.png)
+![Dataset2](https://github.com/evarol/dredge/blob/main/pt02_results.png)
 
