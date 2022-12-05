@@ -17,7 +17,7 @@ data=imresize(data,[size(data,1) num_bins]);
 
 %% register data (data_reg) and output position/motion estimates (p)
 tic;[data_reg_corr,p_corr,D_corr,C_corr,D_unthresholded_corr,C_raw_corr]=dredge(data,threshold,temporal_lambda,'corr');corr_time=toc;
-% tic;[data_reg_mi,p_mi,D_mi,C_mi,D_unthresholded_mi,C_raw_mi]=dredge(data,threshold,temporal_lambda,'mi');mi_time=toc;
+tic;[data_reg_mi,p_mi,D_mi,C_mi,D_unthresholded_mi,C_raw_mi]=dredge(data,threshold,temporal_lambda,'mi');mi_time=toc;
 disp(['DREDGE-corr time: ' num2str(corr_time)]);
 disp(['DREDGE-mi time: ' num2str(mi_time)]);
 
