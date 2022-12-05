@@ -1,4 +1,4 @@
-# Python library for LFP registration of high-density ephys data
+# Python library for DREDge
 
 ## Introduction
 
