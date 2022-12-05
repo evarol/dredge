@@ -21,8 +21,8 @@ $ conda activate reglib
 Finally, install this repo:
 
 ```
-(reglib) $ git clone git@github.com:evarol/neuropixelsLFPregistration.git
-(reglib) $ cd neuropixelsLFPregistration/python
+(reglib) $ git clone git@github.com:evarol/dredge.git
+(reglib) $ cd dredge/python
 (reglib) $ pip install -e .
 ```
 
@@ -33,7 +33,7 @@ After installing the above, you can run Jupyter Lab and checkout the demo notebo
 ```
 # make sure we're in the right folder:
 (reglib) $ pwd
-# => .../neuropixelsLFPregistration/python
+# => .../dredge/python
 (reglib) $ jupyter lab
 ```
 
