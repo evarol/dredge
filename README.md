@@ -1,3 +1,4 @@
+![Logo](https://github.com/evarol/dredge/blob/main/logo.png)
 ![Demo](https://github.com/evarol/neuropixelsLFPregistration/blob/main/image.png)
 # DREDge
 Decentralized registration of electrophysiology data
