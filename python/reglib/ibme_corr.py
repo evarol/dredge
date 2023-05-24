@@ -204,7 +204,7 @@ def calc_corr_decent(
     xrange = trange if pbar else range
     for i in xrange(0, T, batch_size):
         if normalized:
-            corr = normxcorr(
+            corr = normxcorr1d(
                 raster,
                 raster[i : i + batch_size],
                 padding=possible_displacement.size // 2,
@@ -219,14 +219,27 @@ def calc_corr_decent(
         best_disp = possible_displacement[best_disp_inds.cpu()]
         D[i : i + batch_size] = best_disp
         C[i : i + batch_size] = max_corr.cpu()
-        gc.collect()
-        torch.cuda.empty_cache()
+        # gc.collect()
+        # torch.cuda.empty_cache()
 
     return D, C
 
 
-def normxcorr(template, x, padding=None):
-    """normxcorr: Normalized cross-correlation
+def normxcorr1d(
+    template,
+    x,
+    weights=None,
+    centered=True,
+    normalized=True,
+    padding="same",
+    conv_engine="torch",
+    batch_size=256,
+):
+    """normxcorr1d: Normalized cross-correlation, optionally weighted
+
+    The API is like torch's F.conv1d, except I have accidentally
+    changed the position of input/weights -- template acts like weights,
+    and x acts like input.
 
     Returns the cross-correlation of `template` and `x` at spatial lags
     determined by `mode`. Useful for estimating the location of `template`
@@ -236,56 +249,117 @@ def normxcorr(template, x, padding=None):
     It uses a direct convolutional translation of the formula
         corr = (E[XY] - EX EY) / sqrt(var X * var Y)
 
+    This also supports weights! In that case, the usual adaptation of
+    the above formula is made to the weighted case -- and all of the
+    normalizations are done per block in the same way.
+
     Arguments
     ---------
     template : tensor, shape (num_templates, length)
         The reference template signal
     x : tensor, 1d shape (length,) or 2d shape (num_inputs, length)
         The signal in which to find `template`
+    weights : tensor, shape (length,)
+        Will use weighted means, variances, covariances if supplied.
+    centered : bool
+        If true, means will be subtracted (per weighted patch).
+    normalized : bool
+        If true, normalize by the variance (per weighted patch).
     padding : int, optional
         How far to look? if unset, we'll use half the length
-    assume_centered : bool
-        Avoid a copy if your data is centered already.
+    conv_engine : string, one of "torch", "numpy"
+        What library to use for computing cross-correlations.
+        If numpy, falls back to the scipy correlate function.
 
     Returns
     -------
     corr : tensor
     """
-    template = torch.as_tensor(template)
-    x = torch.atleast_2d(torch.as_tensor(x))
-    assert x.device == template.device
+    if conv_engine == "torch":
+        conv1d = F.conv1d
+        nan_to_num = torch_nan_to_num
+        npx = torch
+    elif conv_engine == "numpy":
+        conv1d = scipy_conv1d
+        nan_to_num = np_nan_to_num
+        npx = np
+    else:
+        raise ValueError(f"Unknown conv_engine {conv_engine}")
+
+    x = npx.atleast_2d(x)
     num_templates, length = template.shape
-    num_inputs, length_ = template.shape
+    num_inputs, length_ = x.shape
     assert length == length_
 
-    if padding is None:
-        padding = length // 2
+    # generalize over weighted / unweighted case
+    device_kw = {} if conv_engine == "numpy" else dict(device=x.device)
+    ones = npx.ones((1, 1, length), dtype=x.dtype, **device_kw)
+    no_weights = weights is None
+    if no_weights:
+        weights = ones
+        wt = template[:, None, :]
+    else:
+        assert weights.shape == (length,)
+        weights = weights[None, None]
+        wt = template[:, None, :] * weights
+
+    # conv1d valid rule:
+    # (B,1,L),(O,1,L)->(B,O,L)
 
     # compute expectations
-    ones = torch.ones((1, 1, length), dtype=x.dtype, device=x.device)
     # how many points in each window? seems necessary to normalize
     # for numerical stability.
-    N = F.conv1d(ones, ones, padding=padding)
-    Et = F.conv1d(ones, template[:, None, :], padding=padding) / N
-    Ex = F.conv1d(x[:, None, :], ones, padding=padding) / N
+    N = conv1d(ones, weights, padding=padding)
+    if centered:
+        # 11L,T1L-> 1TL
+        Et = conv1d(ones, wt, padding=padding)
+        Et /= N
+        # I1L, 11L -> I1L
+        Ex = conv1d(x[:, None, :], weights, padding=padding)
+        Ex /= N
 
-    # compute covariance
-    corr = F.conv1d(x[:, None, :], template[:, None, :], padding=padding) / N
-    corr -= Ex * Et
+    # compute (weighted) covariance
+    # important: the formula E[XY] - EX EY is well-suited here,
+    # because the means are naturally subtracted correctly
+    # patch-wise. you couldn't pre-subtract them!
+    # I1L, T1L -> ITL
+    cov = conv1d(x[:, None, :], wt, padding=padding)
+    cov /= N
+    if centered:
+        for bs in range(0, num_inputs, batch_size):
+            be = min(num_inputs, bs + batch_size)
+            cov[:, bs:be] -= Ex * Et[:, bs:be]
 
     # compute variances for denominator, using var X = E[X^2] - (EX)^2
-    var_template = F.conv1d(
-        ones, torch.square(template)[:, None, :], padding=padding
-    ) / N - torch.square(Et)
-    var_x = F.conv1d(
-        torch.square(x)[:, None, :], ones, padding=padding
-    ) / N - torch.square(Ex)
+    if normalized:
+        var_template = conv1d(
+            ones, wt * template[:, None, :], padding=padding
+        )
+        var_template /= N
+        var_x = conv1d(
+            npx.square(x)[:, None, :], weights, padding=padding
+        )
+        var_x /= N
+        if centered:
+            var_template -= npx.square(Et)
+            var_x -= npx.square(Ex)
 
-    # now find the final normxcorr and get rid of NaNs in zero-variance areas
-    corr /= torch.sqrt(var_x * var_template)
-    corr[~torch.isfinite(corr)] = 0
+    # now find the final normxcorr
+    corr = cov  # renaming for clarity
+    if normalized:
+        corr /= npx.sqrt(var_x)
+        corr /= npx.sqrt(var_template)
+        # get rid of NaNs in zero-variance areas
+        nan_to_num(corr)
 
     return corr
+
+
+def torch_nan_to_num(x):
+    torch.nan_to_num(x, out=x)
+    
+def np_nan_to_num(x):
+    np.nan_to_num(x, copy=False)
 
 
 # -- online methods: not exposed in `ibme` API yet
@@ -345,43 +419,22 @@ def calc_corr_decent_pair(
     raster_a = torch.tensor(
         raster_a.T, dtype=torch.float32, device=device, requires_grad=False
     )
-    # normalize over depth for normalized (uncentered) xcorrs
-    raster_a /= torch.sqrt((raster_a**2).sum(dim=1, keepdim=True))
-    image = raster_a[:, None, None, :]  # T11D - NCHW
     raster_b = torch.tensor(
         raster_b.T, dtype=torch.float32, device=device, requires_grad=False
     )
-    # normalize over depth for normalized (uncentered) xcorrs
-    raster_b /= torch.sqrt((raster_b**2).sum(dim=1, keepdim=True))
-    weights = raster_b[:, None, None, :]  # T11D - OIHW
 
     D = np.empty((Ta, Tb), dtype=np.float32)
     C = np.empty((Ta, Tb), dtype=np.float32)
     for i in range(0, Ta, batch_size):
-        batch = image[i : i + batch_size]
-        corr = F.conv2d(  # BT1P
-            batch,  # B11D
-            weights,
-            padding=[0, possible_displacement.size // 2],
+        corr = normxcorr1d(
+            raster_b,
+            raster_a[i : i + batch_size],
+            padding=possible_displacement.size // 2,
         )
-        max_corr, best_disp_inds = torch.max(corr[:, :, 0, :], dim=2)
+        max_corr, best_disp_inds = torch.max(corr, dim=2)
         best_disp = possible_displacement[best_disp_inds.cpu()]
         D[i : i + batch_size] = best_disp
         C[i : i + batch_size] = max_corr.cpu()
-
-    # free GPU memory (except torch drivers... happens when process ends)
-    del (
-        raster_a,
-        raster_b,
-        corr,
-        batch,
-        max_corr,
-        best_disp_inds,
-        image,
-        weights,
-    )
-    gc.collect()
-    torch.cuda.empty_cache()
 
     return D, C
 
@@ -438,6 +491,7 @@ def online_register_rigid(
     device=None,
     adaptive_mincorr_percentile=None,
     prior_lambda=0,
+    save_full=False
 ):
     """Online rigid registration
 
@@ -450,6 +504,7 @@ def online_register_rigid(
     p : the vector of estimated displacements
     """
     T = raster.shape[1]
+    extra = {}
 
     # -- initialize
     raster0 = raster[:, 0:batch_length:time_downsample_factor]
@@ -502,4 +557,4 @@ def online_register_rigid(
         p0 = p1
 
     p = np.concatenate(ps)
-    return p
+    return p, extra
