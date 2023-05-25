@@ -18,8 +18,8 @@ def register_online_lfp(
     rigid=True,
     chunk_len_s=10.0,
     win_shape="gaussian",
-    win_step_um=400,
-    win_scale_um=450,
+    win_step_um=800,
+    win_scale_um=850,
     win_margin_um=None,
     max_disp_um=None,
     thomas_kw=None,
@@ -68,7 +68,7 @@ def register_online_lfp(
         win_step_um,
         win_scale_um,
         spatial_bin_centers=geom[:, 1],
-        margin_um=-win_scale_um / 2 if win_margin_um is None else win_margin_um,
+        margin_um=win_margin_um,
         win_shape=win_shape,
         zero_threshold=1e-5,
         rigid=rigid,
@@ -102,7 +102,7 @@ def register_online_lfp(
     # -- loop through chunks
     chunk_starts = range(T_chunk, T_total, T_chunk)
     if pbar:
-        chunk_starts = trange(T_chunk, T_total, T_chunk, desc="Online chunks")
+        chunk_starts = trange(T_chunk, T_total, T_chunk, desc=f"Online chunks [{chunk_len_s}s each]")
     for t1 in chunk_starts:
         t2 = min(T_total, t1 + T_chunk)
         traces1 = lfp_recording.get_traces(start_frame=t1, end_frame=t2)

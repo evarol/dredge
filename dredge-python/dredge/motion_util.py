@@ -13,6 +13,7 @@ The main registration APIs in dredge_ap and drege_lfp use these helpers.
 import numpy as np
 from scipy.interpolate import RectBivariateSpline, interp1d
 from scipy.ndimage import gaussian_filter1d
+from tqdm.auto import trange
 
 
 # -- motion estimate helper classes
@@ -95,7 +96,6 @@ class RigidMotionEstimate(MotionEstimate):
         )
 
     def disp_at_s(self, t_s, depth_um=None, grid=False):
-        assert not grid
         return self.lerp(t_s)
 
 
@@ -211,7 +211,9 @@ def get_motion_estimate(
             time_bin_edges_s=time_bin_edges_s,
             time_bin_centers_s=time_bin_centers_s,
         )
-    assert any(a is not None for a in (spatial_bin_edges_um, spatial_bin_centers_um))
+    assert any(
+        a is not None for a in (spatial_bin_edges_um, spatial_bin_centers_um)
+    )
 
     # linear interpolation nonrigid
     if not upsample_by_windows:
@@ -234,7 +236,9 @@ def get_motion_estimate(
     assert window_weights.shape == displacement.shape
     # precision weighted average
     normalizer = windows.T @ window_weights
-    displacement_upsampled = (windows.T @ (displacement * window_weights)) / normalizer
+    displacement_upsampled = (
+        windows.T @ (displacement * window_weights)
+    ) / normalizer
 
     return NonrigidMotionEstimate(
         displacement_upsampled,
@@ -254,7 +258,10 @@ def speed_limit_filter(me, speed_limit_um_per_s=5000.0):
     print(f"{valid.mean()=}")
     if valid.all():
         return me
-    valid_lerp = [interp1d(me.time_bin_centers_s[v], d[v]) for v, d in zip(valid, displacement)]
+    valid_lerp = [
+        interp1d(me.time_bin_centers_s[v], d[v])
+        for v, d in zip(valid, displacement)
+    ]
     filtered_displacement = [vl(me.time_bin_centers_s) for vl in valid_lerp]
 
     return get_motion_estimate(
@@ -266,10 +273,26 @@ def speed_limit_filter(me, speed_limit_um_per_s=5000.0):
     )
 
 
+def resample_to_new_time_bins(me, new_time_bin_centers_s=None):
+    displacement_up = me.disp_at_s(
+        new_time_bin_centers_s, me.spatial_bin_centers_um, grid=True
+    )
+    return get_motion_estimate(
+        displacement_up,
+        time_bin_centers_s=new_time_bin_centers_s,
+        spatial_bin_centers_um=me.spatial_bin_centers_um,
+    )
+
+
 # -- plotting
 
 
-def show_raster(raster, spatial_bin_edges_um, time_bin_edges_s, ax, **imshow_kwargs):
+# spikes plotting helpers
+
+
+def show_raster(
+    raster, spatial_bin_edges_um, time_bin_edges_s, ax, **imshow_kwargs
+):
     """Display a spike activity raster as created with `spike_raster` below"""
     ax.imshow(
         raster,
@@ -279,7 +302,15 @@ def show_raster(raster, spatial_bin_edges_um, time_bin_edges_s, ax, **imshow_kwa
     )
 
 
-def plot_me_traces(me, ax, offset=0, depths_um=None, label=False, zero_times=False, **plot_kwargs):
+def plot_me_traces(
+    me,
+    ax,
+    offset=0,
+    depths_um=None,
+    label=False,
+    zero_times=False,
+    **plot_kwargs,
+):
     """Plot the displacement estimates for the MotionEstimate me as lines."""
     if depths_um is None:
         depths_um = me.spatial_bin_centers_um
@@ -316,12 +347,16 @@ def show_registered_raster(me, amps, depths, times, ax, **imshow_kwargs):
     )
 
 
-def show_displacement_heatmap(me, ax, spatial_bin_centers_um=None, **imshow_kwargs):
+def show_displacement_heatmap(
+    me, ax, spatial_bin_centers_um=None, **imshow_kwargs
+):
     """Plot a spatiotemporal heatmap of displacement for the MotionEstimate me."""
     if spatial_bin_centers_um is None:
         spatial_bin_centers_um = me.spatial_bin_centers_um
 
-    displacement_heatmap = me.disp_at_s(me.time_bin_centers_s, spatial_bin_centers_um, grid=True)
+    displacement_heatmap = me.disp_at_s(
+        me.time_bin_centers_s, spatial_bin_centers_um, grid=True
+    )
     ax.imshow(
         displacement_heatmap,
         extent=(
@@ -331,6 +366,95 @@ def show_displacement_heatmap(me, ax, spatial_bin_centers_um=None, **imshow_kwar
         origin="lower",
         **imshow_kwargs,
     )
+
+
+# lfp plotting helpers
+
+
+def show_lfp_image(
+    lfp_recording,
+    start_sample,
+    end_sample,
+    ax,
+    volts=False,
+    seconds=True,
+    microns=False,
+    aspect="auto",
+    batched_mode=False,
+    **imshow_kwargs,
+):
+    if batched_mode:
+        traces = np.concatenate(
+            [
+                lfp_recording.get_traces(
+                    0, t0, min(end_sample, t0 + 10), return_scaled=volts
+                )
+                for t0 in range(start_sample, end_sample, 10)
+            ]
+        )
+    else:
+        traces = lfp_recording.get_traces(
+            0, start_sample, end_sample, return_scaled=volts
+        )
+
+    if seconds:
+        times = lfp_recording.get_times(0)[start_sample:end_sample]
+        extent_t = times[[0, -1]]
+        xlabel = "time (seconds)"
+    else:
+        extent_t = start_sample, end_sample
+        xlabel = "time (samples)"
+
+    if microns:
+        geom_y = lfp_recording.get_channel_locations()[:, 1]
+        extent_y = geom_y.max(), geom_y.min()
+        ylabel = "depth (microns)"
+    else:
+        extent_y = 0, lfp_recording.get_num_channels()
+        ylabel = "channels"
+
+    extent = [*extent_t, *extent_y]
+    im = ax.imshow(traces.T, extent=extent, aspect=aspect, **imshow_kwargs)
+    ax.set_xlabel(xlabel)
+    ax.set_ylabel(ylabel)
+
+    return im
+
+
+def show_lfp_me_traces(
+    me,
+    start_sample,
+    end_sample,
+    ax,
+    label=False,
+    seconds=True,
+    depths_um=None,
+    **plot_kwargs,
+):
+    times_s = me.time_bin_centers_s[start_sample:end_sample]
+    times = times_s
+    if not seconds:
+        times = np.arange(start_sample, end_sample)
+
+    if depths_um is None:
+        depths_um = me.spatial_bin_centers_um
+    if depths_um is None:
+        depths_um = [sum(ax.get_ylim()) / 2]
+
+    for b, depth in enumerate(depths_um):
+        disp = me.disp_at_s(times_s, depth_um=depth)
+        if isinstance(label, str):
+            lab = label
+        else:
+            lab = f"bin {b}" if label else None
+        (l,) = ax.plot(
+            times,
+            depth + disp,
+            label=lab,
+            **plot_kwargs,
+        )
+
+    return l
 
 
 # -- bins / windows / rasters
@@ -364,6 +488,8 @@ def get_windows(
     """Helper wrapper around si_get_windows below."""
     if win_shape == "gaussian":
         win_sigma_um = win_sigma_um / 2
+    if margin_um is None:
+        margin_um = -win_sigma_um
 
     windows, locs = si_get_windows(
         rigid=rigid,
@@ -390,6 +516,7 @@ def get_windows(
 #  - support input of bin centers rather than edges for LFP use case
 #  - does not actually need bin_um, and this may not always exist under non-uniform bin spacing (i.e. lfp could be from probe with holes)
 #  - should return arrays
+#  - contact_pos[:, 1] in bin pos calc
 # also, not implemented here, but shouldn't the margin logic be based
 # on the spatial bins rather than the geometry? the way it is now,
 # it makes nonrigid registration after rigid registration of an insertion
@@ -447,7 +574,9 @@ def si_get_windows(
 
     """
     if spatial_bin_centers is None:
-        spatial_bin_centers = 0.5 * (spatial_bin_edges[1:] + spatial_bin_edges[:-1])
+        spatial_bin_centers = 0.5 * (
+            spatial_bin_edges[1:] + spatial_bin_edges[:-1]
+        )
     n = spatial_bin_centers.size
 
     if rigid:
@@ -456,8 +585,8 @@ def si_get_windows(
         middle = (spatial_bin_centers[0] + spatial_bin_centers[-1]) / 2.0
         non_rigid_window_centers = np.array([middle])
     else:
-        min_ = np.min(contact_pos) - margin_um
-        max_ = np.max(contact_pos) + margin_um
+        min_ = np.min(contact_pos[:, 1]) - margin_um
+        max_ = np.max(contact_pos[:, 1]) + margin_um
         num_non_rigid_windows = int((max_ - min_) // win_step_um)
         border = ((max_ - min_) % win_step_um) / 2
         non_rigid_window_centers = (
@@ -468,10 +597,13 @@ def si_get_windows(
         for win_center in non_rigid_window_centers:
             if win_shape == "gaussian":
                 win = np.exp(
-                    -((spatial_bin_centers - win_center) ** 2) / (2 * win_sigma_um**2)
+                    -((spatial_bin_centers - win_center) ** 2)
+                    / (2 * win_sigma_um**2)
                 )
             elif win_shape == "rect":
-                win = np.abs(spatial_bin_centers - win_center) < (win_sigma_um / 2.0)
+                win = np.abs(spatial_bin_centers - win_center) < (
+                    win_sigma_um / 2.0
+                )
                 win = win.astype("float64")
             elif win_shape == "triangle":
                 center_dist = np.abs(spatial_bin_centers - win_center)
@@ -567,7 +699,9 @@ def spike_raster(
             spatial_bin_edges_um[-1] + 1,
             1,
         )
-        spatial_bin_centers_um_1um = 0.5 * (spatial_bin_edges_um_1um[1:] + spatial_bin_edges_um_1um[:-1])
+        spatial_bin_centers_um_1um = 0.5 * (
+            spatial_bin_edges_um_1um[1:] + spatial_bin_edges_um_1um[:-1]
+        )
         r_up = np.histogram2d(
             depths,
             times,
@@ -585,8 +719,13 @@ def spike_raster(
             )
 
         r_up = gaussian_filter1d(r_up, gaussian_smoothing_sigma_um, axis=0)
-        r = np.empty((spatial_bin_edges_um.size - 1, time_bin_edges_s.size - 1), dtype=r_up.dtype)
-        for i, (bin_start, bin_end) in enumerate(zip(spatial_bin_edges_um, spatial_bin_edges_um[1:])):
+        r = np.empty(
+            (spatial_bin_edges_um.size - 1, time_bin_edges_s.size - 1),
+            dtype=r_up.dtype,
+        )
+        for i, (bin_start, bin_end) in enumerate(
+            zip(spatial_bin_edges_um, spatial_bin_edges_um[1:])
+        ):
             in_bin = np.flatnonzero(
                 (bin_start <= spatial_bin_centers_um_1um)
                 & (bin_end > spatial_bin_centers_um_1um)
