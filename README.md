@@ -1,4 +1,4 @@
-<image src="https://github.com/evarol/dredge/blob/main/assets/logo.png" width="500px" />
+<image src="https://github.com/evarol/dredge/blob/main/assets/logo.png" width="500px"></image>
 ![Demo](https://github.com/evarol/neuropixelsLFPregistration/blob/main/assets/image.png)
 
 # DREDge: Decentralized Registration of Electrophysiology Data
