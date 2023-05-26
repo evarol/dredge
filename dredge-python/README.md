@@ -40,15 +40,9 @@ Since this repo and its relationship with `spikeinterface` are currently in acti
 # leave this repo's folder
 (dredge) $ cd ..
 
-# now, we install a specific branch of spikeinterface from my fork
+# install spikeinterface
 (dredge) $ git clone git@github.com:SpikeInterface/spikeinterface.git
 (dredge) $ cd spikeinterface
-# add my fork as a remote
-(dredge) $ git remote add cwindolf git@github.com:cwindolf/spikeinterface.git
-# checkout the specific branch which I am currently working on merging into SI
-# see the pull request here https://github.com/SpikeInterface/spikeinterface/pull/1673
-(dredge) $ git fetch cwindolf more_preprocessing
-(dredge) $ git checkout -b more_preprocessing cwindolf/more_preprocessing
 # now, we can pip install. do a -e (editable) install so that we can work off of
 # different branches later without needing to reinstall
 (dredge) $ pip install -e .
