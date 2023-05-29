@@ -29,7 +29,7 @@ $ mamba activate dredge
 
 ### Installing DREDge, probeinterface, and spikeinterface
 
-Since this repo and its relationship with `spikeinterface` are currently in active development, we'll need to install `spikeinterface` and `probeinterface` from their github versions, and we'll even need to use specific branches in some cases. The current install steps are:
+**(This part is only needed for LFP users.)** Since this repo and its relationship with `spikeinterface` are currently in active development, we'll need to install `spikeinterface` and `probeinterface` from their github versions, and we'll even need to use specific branches in some cases. The current install steps are:
 
 ```
 # make sure you are in a folder where you want to store a bunch of different code
@@ -50,7 +50,7 @@ Since this repo and its relationship with `spikeinterface` are currently in acti
 (dredge) $ cd ..
 ```
 
-Finally, we are ready to install `dredge`!
+**(This part is for all users.)** Finally, we are ready to install `dredge`!
 
 ```
 (reglib) $ git clone git@github.com:evarol/dredge.git
