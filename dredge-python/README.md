@@ -2,7 +2,7 @@
 
 ## Introduction
 
-This library contains Python code for motion estimation and correction for high density LFP and spiking data. A [demo notebook](notebook/demo.ipynb) is available to see how to use this code.
+This library contains Python code for motion estimation and correction for high density LFP and spiking data. A [demo notebook](notebook/lfp_registration_and_interpolation_demo.ipynb) is available to see how to use this code.
 
 ## Installation with Conda (or Mamba)
 
