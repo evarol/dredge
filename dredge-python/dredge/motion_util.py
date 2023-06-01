@@ -11,7 +11,7 @@ This library has 3 sections:
 The main registration APIs in dredge_ap and drege_lfp use these helpers.
 """
 import numpy as np
-from scipy.interpolate import RectBivariateSpline, interp1d
+from scipy.interpolate import RectBivariateSpline, RegularGridInterpolator, interp1d
 from scipy.ndimage import gaussian_filter1d
 from tqdm.auto import trange
 
@@ -137,19 +137,29 @@ class NonrigidMotionEstimate(MotionEstimate):
         self.d_low = self.spatial_bin_centers_um.min()
         self.d_high = self.spatial_bin_centers_um.max()
 
-        self.lerp = RectBivariateSpline(
-            self.spatial_bin_centers_um,
-            self.time_bin_centers_s,
+        # self.lerp = RectBivariateSpline(
+        #     self.spatial_bin_centers_um,
+        #     self.time_bin_centers_s,
+        #     self.displacement,
+        #     kx=1,
+        #     ky=1,
+        # )
+        self.lerp = RegularGridInterpolator(
+            (self.spatial_bin_centers_um, self.time_bin_centers_s),
             self.displacement,
-            kx=1,
-            ky=1,
         )
 
     def disp_at_s(self, t_s, depth_um=None, grid=False):
+        assert not grid
+        if np.array(depth_um).shape != t_s.shape:
+            assert np.array(depth_um).size == 1
+            depth_um = np.full_like(t_s, depth_um)
         return self.lerp(
-            np.clip(depth_um, self.d_low, self.d_high),
-            np.clip(t_s, self.t_low, self.t_high),
-            grid=grid,
+            np.c_[
+                np.clip(depth_um, self.d_low, self.d_high),
+                np.clip(t_s, self.t_low, self.t_high),
+            ],
+            # grid=grid,
         )
 
 
@@ -211,9 +221,7 @@ def get_motion_estimate(
             time_bin_edges_s=time_bin_edges_s,
             time_bin_centers_s=time_bin_centers_s,
         )
-    assert any(
-        a is not None for a in (spatial_bin_edges_um, spatial_bin_centers_um)
-    )
+    assert any(a is not None for a in (spatial_bin_edges_um, spatial_bin_centers_um))
 
     # linear interpolation nonrigid
     if not upsample_by_windows:
@@ -236,9 +244,7 @@ def get_motion_estimate(
     assert window_weights.shape == displacement.shape
     # precision weighted average
     normalizer = windows.T @ window_weights
-    displacement_upsampled = (
-        windows.T @ (displacement * window_weights)
-    ) / normalizer
+    displacement_upsampled = (windows.T @ (displacement * window_weights)) / normalizer
 
     return NonrigidMotionEstimate(
         displacement_upsampled,
@@ -259,8 +265,7 @@ def speed_limit_filter(me, speed_limit_um_per_s=5000.0):
     if valid.all():
         return me
     valid_lerp = [
-        interp1d(me.time_bin_centers_s[v], d[v])
-        for v, d in zip(valid, displacement)
+        interp1d(me.time_bin_centers_s[v], d[v]) for v, d in zip(valid, displacement)
     ]
     filtered_displacement = [vl(me.time_bin_centers_s) for vl in valid_lerp]
 
@@ -284,15 +289,50 @@ def resample_to_new_time_bins(me, new_time_bin_centers_s=None):
     )
 
 
+# -- preprocessing helpers
+
+
+def fill_gaps_along_depth(recording):
+    """A naive method for filling missing channels in recordings."""
+    import spikeinterface.preprocessing as sppx
+
+    # figure out where the gaps are and how big they are relative
+    # to the rest of the channel spacings
+    geom = recording.get_channel_locations()
+    geom_y = geom[:, 1]
+    dy = np.diff(geom_y)
+    dy_unique = np.unique(dy)
+    if dy_unique.size <= 1:
+        # nothing to do, all channel spacings are the same
+        return recording
+    pitch = dy_unique.min()
+
+    # figure out where the new channels should go
+    new_locs = []
+    for j in np.flatnonzero(dy > pitch):
+        dyj = dy[j]
+        n_add = int(dyj // pitch - 1)
+        at_j = geom[geom_y == geom_y[j]].mean(0)
+        at_next = geom[geom_y == geom_y[j] + dyj].mean(0)
+        center_x = 0.5 * (at_j[0] + at_next[0])
+        for k in range(n_add):
+            new_locs.append([center_x, at_j[1] + (k + 1) * dyj])
+
+    # use a spikeinterface preprocessing chain to interpolate
+    # into these gaps
+    rec = sppx.add_fake_channels(recording, len(new_locs), new_locs)
+    rec = sppx.depth_order(rec)
+    bad_channels = [id for id in rec.channel_ids if id.startswith("FakeChan")]
+    return sppx.interpolate_bad_channels(rec, bad_channels)
+
+
 # -- plotting
 
 
 # spikes plotting helpers
 
 
-def show_raster(
-    raster, spatial_bin_edges_um, time_bin_edges_s, ax, **imshow_kwargs
-):
+def show_raster(raster, spatial_bin_edges_um, time_bin_edges_s, ax, **imshow_kwargs):
     """Display a spike activity raster as created with `spike_raster` below"""
     ax.imshow(
         raster,
@@ -347,9 +387,7 @@ def show_registered_raster(me, amps, depths, times, ax, **imshow_kwargs):
     )
 
 
-def show_displacement_heatmap(
-    me, ax, spatial_bin_centers_um=None, **imshow_kwargs
-):
+def show_displacement_heatmap(me, ax, spatial_bin_centers_um=None, **imshow_kwargs):
     """Plot a spatiotemporal heatmap of displacement for the MotionEstimate me."""
     if spatial_bin_centers_um is None:
         spatial_bin_centers_um = me.spatial_bin_centers_um
@@ -574,9 +612,7 @@ def si_get_windows(
 
     """
     if spatial_bin_centers is None:
-        spatial_bin_centers = 0.5 * (
-            spatial_bin_edges[1:] + spatial_bin_edges[:-1]
-        )
+        spatial_bin_centers = 0.5 * (spatial_bin_edges[1:] + spatial_bin_edges[:-1])
     n = spatial_bin_centers.size
 
     if rigid:
@@ -597,13 +633,10 @@ def si_get_windows(
         for win_center in non_rigid_window_centers:
             if win_shape == "gaussian":
                 win = np.exp(
-                    -((spatial_bin_centers - win_center) ** 2)
-                    / (2 * win_sigma_um**2)
+                    -((spatial_bin_centers - win_center) ** 2) / (2 * win_sigma_um**2)
                 )
             elif win_shape == "rect":
-                win = np.abs(spatial_bin_centers - win_center) < (
-                    win_sigma_um / 2.0
-                )
+                win = np.abs(spatial_bin_centers - win_center) < (win_sigma_um / 2.0)
                 win = win.astype("float64")
             elif win_shape == "triangle":
                 center_dist = np.abs(spatial_bin_centers - win_center)

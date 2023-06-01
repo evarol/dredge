@@ -445,7 +445,10 @@ def xcorr_windows(
     xcorr_kw=default_xcorr_kw,
     device=None,
 ):
-    xcorr_kw = default_xcorr_kw | xcorr_kw
+    if xcorr_kw is None:
+        xcorr_kw = default_xcorr_kw
+    else:
+        xcorr_kw = default_xcorr_kw | xcorr_kw
 
     if device is None:
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")

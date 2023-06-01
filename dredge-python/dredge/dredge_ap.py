@@ -2,17 +2,17 @@ import numpy as np
 from .motion_util import (
     get_windows,
     spike_raster,
-    xcorr_windows,
     get_motion_estimate,
 )
 from .dredgelib import (
     default_raster_kw,
     weight_correlation_matrix,
+    xcorr_windows,
     thomas_solve,
 )
 
 
-default_weights_kw = dict(
+default_weights_kw_ap = dict(
     mincorr=0.1,
     max_dt_s=1000,
     do_window_weights=True,
@@ -36,7 +36,7 @@ def register(
     thomas_kw=None,
     xcorr_kw=None,
     raster_kw=default_raster_kw,
-    weights_kw=default_weights_kw,
+    weights_kw=default_weights_kw_ap,
     device=None,
     pbar=True,
     save_full=False,
@@ -46,7 +46,7 @@ def register(
     """
     thomas_kw = thomas_kw if thomas_kw is not None else {}
     raster_kw = default_raster_kw | raster_kw
-    weights_kw = default_weights_kw | weights_kw
+    weights_kw = default_weights_kw_ap | weights_kw
     raster_kw["bin_s"] = bin_s
     raster_kw["bin_um"] = bin_um
 
