@@ -19,10 +19,13 @@ default_raster_kw = dict(
     gaussian_smoothing_sigma_um=1,
 )
 
+DEFAULT_LAMBDA_T = 1.0
+DEFAULT_EPS = 1e-4
+
 
 # -- linear algebra, Newton method solver, block tridiagonal (Thomas) solver
 
-def laplacian(n, wink=True, eps=1e-3, lambd=1.0):
+def laplacian(n, wink=True, eps=DEFAULT_EPS, lambd=1.0):
     lap = (lambd + eps) * np.eye(n)
     if wink:
         lap[0, 0] -= 0.5 * lambd
@@ -105,9 +108,9 @@ def newton_solve_rigid(
 def thomas_solve(
     Ds,
     Us,
-    lambda_t=1.0,
+    lambda_t=DEFAULT_LAMBDA_T,
     lambda_s=1.0,
-    eps=1e-4,
+    eps=DEFAULT_EPS,
     P_prev=None,
     Ds_prevcur=None,
     Us_prevcur=None,
@@ -353,8 +356,8 @@ def weight_correlation_matrix(
     mincorr_percentile=None,
     mincorr_percentile_nneighbs=20,
     max_dt_s=None,
-    lambda_t=1,
-    eps=1e-10,
+    lambda_t=DEFAULT_LAMBDA_T,
+    eps=DEFAULT_EPS,
     do_window_weights=True,
     weights_threshold_low=0.0,
     weights_threshold_high=np.inf,

@@ -9,6 +9,8 @@ from .dredgelib import (
     weight_correlation_matrix,
     xcorr_windows,
     thomas_solve,
+    DEFAULT_LAMBDA_T,
+    DEFAULT_EPS,
 )
 
 
@@ -98,8 +100,8 @@ def register(
         depths_um,
         times_s,
         windows,
-        lambda_t=thomas_kw["lambda_t"],
-        eps=thomas_kw["eps"],
+        lambda_t=thomas_kw.get("lambda_t", DEFAULT_LAMBDA_T),
+        eps=thomas_kw.get("eps", DEFAULT_EPS),
         raster_kw=raster_kw,
         pbar=pbar,
         **weights_kw,
