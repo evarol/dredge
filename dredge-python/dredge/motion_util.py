@@ -334,7 +334,7 @@ def fill_gaps_along_depth(recording):
 
 def show_raster(raster, spatial_bin_edges_um, time_bin_edges_s, ax, **imshow_kwargs):
     """Display a spike activity raster as created with `spike_raster` below"""
-    ax.imshow(
+    return ax.imshow(
         raster,
         extent=(*time_bin_edges_s[[0, -1]], *spatial_bin_edges_um[[0, -1]]),
         origin="lower",
