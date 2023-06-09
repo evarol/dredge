@@ -45,6 +45,35 @@ def register(
     precomputed_D_C_maxdisp=None,
 ):
     """Estimate motion from spikes
+    
+    Arguments
+    ---------
+    amps, depths, times : arrays of shape (n_spikes,)
+        The amplitudes, depths (microns) and times (seconds) of input
+        spike events.
+    rigid : bool
+        If True, ignore the window args and do rigid registration.
+    bin_um, bin_s : numbers
+        The size of the bins along depth in microns and along time in seconds.
+        The returned object's .displacement array will respect these bins.
+    win_shape, win_step_um, win_scale_um, win_margin_um
+        Control the shape ("gaussian", "rect"), step/distance between windows,
+        their scale/size, and their margin from the border (-1000 means no window
+        within 1000um of the edge of the probe)
+    max_disp_um : number
+        Maximum possible displacement in microns
+    thomas_kw, xcorr_kw, raster_kw, weights_kw
+        These dictionaries allow setting parameters for fine control over the registration
+    
+    Returns
+    -------
+    motion_est : a motion_util.MotionEstimate object
+        This has a .displacement attribute which is the displacement estimate in a
+        (num_nonrigid_blocks, num_time_bins) array. It also has properties describing
+        the time and spatial bins, and methods for getting the displacement at a particular
+        time and depth.
+    extra : dict
+        This has extra info about what happened during registration
     """
     thomas_kw = thomas_kw if thomas_kw is not None else {}
     raster_kw = default_raster_kw | raster_kw
