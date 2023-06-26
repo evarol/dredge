@@ -236,7 +236,7 @@ def get_weights(
     times,
     weights_threshold_low=0.0,
     weights_threshold_high=np.inf,
-    raster_kw=default_raster_kw,
+    raster_kw=None,
     pbar=False,
 ):
     r, dbe, tbe = spike_raster(amps, depths, times, **raster_kw)
@@ -348,9 +348,10 @@ def weight_correlation_matrix(
     do_window_weights=True,
     weights_threshold_low=0.0,
     weights_threshold_high=np.inf,
-    raster_kw=default_raster_kw,
+    raster_kw=None,
     pbar=True,
 ):
+    assert raster_kw is not None
     extra = {}
     bin_s = raster_kw["bin_s"]
     bin_um = raster_kw["bin_um"]
@@ -414,11 +415,6 @@ def weight_correlation_matrix(
 
 
 # -- cross-correlation tools
-
-
-    centered=True,
-    normalized=True,
-)
 
 
 def xcorr_windows(

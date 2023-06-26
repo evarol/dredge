@@ -223,8 +223,8 @@ class NonrigidMotionEstimate(MotionEstimate):
         An array of displacements in microns with the same shape as t_s (when grid=False).
         """
         assert not grid
-        if np.array(depth_um).shape != t_s.shape:
-            assert np.array(depth_um).size == 1
+        if np.asarray(depth_um).shape != np.asarray(t_s).shape:
+            assert np.asarray(depth_um).size == 1
             depth_um = np.full_like(t_s, depth_um)
         return self.lerp(
             np.c_[

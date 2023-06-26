@@ -79,13 +79,6 @@ def register_online_lfp(
 
     # kwarg defaults and handling
     # need lfp-specific defaults
-    weights_kw = dict(
-        mincorr=mincorr,
-        mincorr_percentile_nneighbs=mincorr_percentile_nneighbs,
-        soft=soft,
-        do_window_weights=False,
-        max_dt_s=None,
-    )
     xcorr_kw = xcorr_kw if xcorr_kw is not None else {}
     thomas_kw = thomas_kw if thomas_kw is not None else {}
     full_xcorr_kw = dict(
@@ -96,17 +89,15 @@ def register_online_lfp(
         xcorr_kw=xcorr_kw,
         device=device,
     )
-    mincorr_percentile = None
-    assert "max_dt_s" not in weights_kw or weights_kw["max_dt_s"] is None
     threshold_kw = dict(
-        mincorr_percentile_nneighbs=weights_kw["mincorr_percentile_nneighbs"],
-        # max_dt_s=weights_kw["max_dt_s"],  # max_dt not implemented for lfp at this point
-        # bin_s=1 / fs,  # only relevant for max_dt_s
+        mincorr=mincorr,
+        mincorr_percentile=mincorr_precentile,
+        mincorr_percentile_nneighbs=mincorr_percentile_nneighbs,
         in_place=True,
         soft=soft,
+        # max_dt_s=weights_kw["max_dt_s"],  # max_dt not implemented for lfp at this point
+        # bin_s=1 / fs,  # only relevant for max_dt_s
     )
-    if "mincorr_percentile" in weights_kw:
-        mincorr_percentile = weights_kw["mincorr_percentile"]
 
     # get windows
     windows, window_centers = get_windows(
@@ -131,9 +122,7 @@ def register_online_lfp(
         traces0.T, windows, geom[:, 1], win_scale_um, **full_xcorr_kw
     )
     full_xcorr_kw["max_disp_um"] = max_disp_um
-    Ss0, mincorr0 = threshold_correlation_matrix(
-        Cs0, mincorr_percentile=mincorr_percentile, mincorr=mincorr, **threshold_kw
-    )
+    Ss0, mincorr0 = threshold_correlation_matrix(Cs0, **threshold_kw)
     if save_full:
         extra["D"] = [Ds0]
         extra["C"] = [Cs0]
