@@ -12,13 +12,6 @@ from .motion_util import (
     get_window_domains,
 )
 
-
-default_raster_kw = dict(
-    amp_scale_fn=None,
-    post_transform=np.log1p,
-    gaussian_smoothing_sigma_um=1,
-)
-
 DEFAULT_LAMBDA_T = 1.0
 DEFAULT_EPS = 1e-4
 
@@ -142,15 +135,15 @@ def thomas_solve(
         assert Ds_prevcur is not None
         assert Us_prevcur is not None
         online_kw_rhs = lambda b: dict(  # noqa
-            Pb_prev=P_prev[b].astype(np.float64),
-            Db_prevcur=Ds_prevcur[b].astype(np.float64),
-            Ub_prevcur=Us_prevcur[b].astype(np.float64),
-            Db_curprev=Ds_curprev[b].astype(np.float64),
-            Ub_curprev=Us_curprev[b].astype(np.float64),
+            Pb_prev=P_prev[b].astype(np.float64, copy=False),
+            Db_prevcur=Ds_prevcur[b].astype(np.float64, copy=False),
+            Ub_prevcur=Us_prevcur[b].astype(np.float64, copy=False),
+            Db_curprev=Ds_curprev[b].astype(np.float64, copy=False),
+            Ub_curprev=Us_curprev[b].astype(np.float64, copy=False),
         )
         online_kw_hess = lambda b: dict(  # noqa
-            Ub_prevcur=Us_prevcur[b].astype(np.float64),
-            Ub_curprev=Us_curprev[b].astype(np.float64),
+            Ub_prevcur=Us_prevcur[b].astype(np.float64, copy=False),
+            Ub_curprev=Us_curprev[b].astype(np.float64, copy=False),
         )
 
     B, T, T_ = Ds.shape
@@ -252,12 +245,6 @@ def get_weights(
     p_inds = []
     # start with rigid registration with weights=inf independently in each window
     for b in trange((len(Ds)), desc="Weights") if pbar else range(len(Ds)):
-        # rigid motion estimate in this window
-        p = newton_solve_rigid(Ds[b], Ss[b], Sigma0inv_t)[0]
-        p_inds.append(p)
-        me = get_motion_estimate(p, time_bin_edges_s=tbe)
-        depths_reg = me.correct_s(times, depths)
-
         # raster just our window's bins
         # take care when tracking start/end indices of bin centers v bin edges
         ilow, ihigh = np.flatnonzero(windows[b])[[0, -1]]
@@ -265,7 +252,7 @@ def get_weights(
         window_sliced = windows[b, ilow:ihigh]
         rr, dbr, tbr = spike_raster(
             amps,
-            depths_reg,
+            depths,
             times,
             spatial_bin_edges_um=dbe[ilow : ihigh + 1],
             time_bin_edges_s=tbe,
@@ -429,7 +416,6 @@ def weight_correlation_matrix(
 # -- cross-correlation tools
 
 
-default_xcorr_kw = dict(
     centered=True,
     normalized=True,
 )
@@ -445,14 +431,10 @@ def xcorr_windows(
     bin_um=1,
     max_disp_um=None,
     pbar=True,
-    xcorr_kw=default_xcorr_kw,
+    centered=True,
+    normalized=True,
     device=None,
 ):
-    if xcorr_kw is None:
-        xcorr_kw = default_xcorr_kw
-    else:
-        xcorr_kw = default_xcorr_kw | xcorr_kw
-
     if device is None:
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -507,7 +489,8 @@ def xcorr_windows(
             disp=padding,
             possible_displacement=poss_disp,
             device=device,
-            **xcorr_kw,
+            centered=centered,
+            normalized=normalized,
         )
 
     return Ds, Cs, max_disp_um

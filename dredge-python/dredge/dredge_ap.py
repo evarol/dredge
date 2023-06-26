@@ -5,21 +5,11 @@ from .motion_util import (
     get_motion_estimate,
 )
 from .dredgelib import (
-    default_raster_kw,
     weight_correlation_matrix,
     xcorr_windows,
     thomas_solve,
     DEFAULT_LAMBDA_T,
     DEFAULT_EPS,
-)
-
-
-default_weights_kw_ap = dict(
-    mincorr=0.1,
-    max_dt_s=1000,
-    do_window_weights=True,
-    weights_threshold_low=0.2,
-    weights_threshold_high=0.2,
 )
 
 
@@ -30,15 +20,27 @@ def register(
     rigid=False,
     bin_um=1.0,
     bin_s=1.0,
+    max_disp_um=None,
+    # nonrigid window construction arguments
     win_shape="gaussian",
     win_step_um=400,
     win_scale_um=450,
     win_margin_um=None,
-    max_disp_um=None,
+    # raster arguments
+    amp_scale_fn=None,
+    post_transform=np.log1p,
+    gaussian_smoothing_sigma_um=1,
+    gaussian_smoothing_sigma_s=1,
+    # weights arguments
+    mincorr=0.1,
+    max_dt_s=1000,
+    do_window_weights=True,
+    weights_threshold_low=0.2,
+    weights_threshold_high=0.2,
+    # low-level keyword args
     thomas_kw=None,
     xcorr_kw=None,
-    raster_kw=default_raster_kw,
-    weights_kw=default_weights_kw_ap,
+    # misc    
     device=None,
     pbar=True,
     save_full=False,
@@ -76,10 +78,22 @@ def register(
         This has extra info about what happened during registration
     """
     thomas_kw = thomas_kw if thomas_kw is not None else {}
-    raster_kw = default_raster_kw | raster_kw
-    weights_kw = default_weights_kw_ap | weights_kw
-    raster_kw["bin_s"] = bin_s
-    raster_kw["bin_um"] = bin_um
+    xcorr_kw = xcorr_kw if xcorr_kw is not None else {}
+    raster_kw = dict(
+        amp_scale_fn=amp_scale_fn,
+        post_transform=post_transform,
+        gaussian_smoothing_sigma_um=gaussian_smoothing_sigma_um,
+        gaussian_smoothing_sigma_s=gaussian_smoothing_sigma_s,
+        bin_s=bin_s,
+        bin_um=bin_um,
+    )
+    weights_kw = dict(
+        mincorr=mincorr,
+        max_dt_s=max_dt_s,
+        do_window_weights=do_window_weights,
+        weights_threshold_low=weights_threshold_low,
+        weights_threshold_high=weights_threshold_high,
+    )
 
     # this will store return values other than the MotionEstimate
     extra = {}
@@ -115,8 +129,8 @@ def register(
             bin_um=bin_um,
             max_disp_um=max_disp_um,
             pbar=pbar,
-            xcorr_kw=xcorr_kw,
             device=device,
+            **xcorr_kw,
         )
     else:
         Ds, Cs, max_disp_um = precomputed_D_C_maxdisp

@@ -4,27 +4,26 @@ from .motion_util import get_windows, get_motion_estimate
 from .dredgelib import xcorr_windows, threshold_correlation_matrix, thomas_solve
 
 
-default_weights_kw_lfp = dict(
-    mincorr=0.8,
-    max_dt_s=None,
-    do_window_weights=False,
-    mincorr_percentile_nneighbs=20,
-    soft=False,
-)
-
 
 def register_online_lfp(
     lfp_recording,
     rigid=True,
     chunk_len_s=10.0,
+    max_disp_um=None,
+    # nonrigid window construction arguments
     win_shape="gaussian",
     win_step_um=800,
     win_scale_um=850,
     win_margin_um=None,
-    max_disp_um=None,
+    # weighting arguments
+    mincorr=0.8,
+    do_window_weights=False,
+    mincorr_percentile_nneighbs=20,
+    soft=False,
+    # low-level arguments
     thomas_kw=None,
     xcorr_kw=None,
-    weights_kw=default_weights_kw_lfp,
+    # misc
     save_full=False,
     device=None,
     pbar=True,
@@ -38,7 +37,13 @@ def register_online_lfp(
 
     # kwarg defaults and handling
     # need lfp-specific defaults
-    weights_kw = default_weights_kw_lfp | weights_kw
+    weights_kw = dict(
+        mincorr=mincorr,
+        do_window_weights=do_window_weights,
+        mincorr_percentile_nneighbs=mincorr_percentile_nneighbs,
+        soft=soft,
+        max_dt_s=None,
+    )
     xcorr_kw = xcorr_kw if xcorr_kw is not None else {}
     thomas_kw = thomas_kw if thomas_kw is not None else {}
     full_xcorr_kw = dict(
@@ -50,14 +55,13 @@ def register_online_lfp(
         device=device,
     )
     mincorr_percentile = None
-    mincorr = weights_kw["mincorr"]
     assert "max_dt_s" not in weights_kw or weights_kw["max_dt_s"] is None
     threshold_kw = dict(
         mincorr_percentile_nneighbs=weights_kw["mincorr_percentile_nneighbs"],
         # max_dt_s=weights_kw["max_dt_s"],  # max_dt not implemented for lfp at this point
         # bin_s=1 / fs,  # only relevant for max_dt_s
         in_place=True,
-        soft=weights_kw["soft"],
+        soft=soft,
     )
     if "mincorr_percentile" in weights_kw:
         mincorr_percentile = weights_kw["mincorr_percentile"]

@@ -22,6 +22,9 @@ from tqdm.auto import trange
 class MotionEstimate:
     """MotionEstimate
 
+    This class won't be instantiated, users interact with subclasses below
+    which are usually instantiated by the `get_motion_estimate()` function.
+
     MotionEstimate and its subclasses manage your displacement estimate
     and its temporal (and optionally spatial, if nonrigid) domain(s),
     and they can smartly give you the displacement at a given time (and
@@ -60,9 +63,44 @@ class MotionEstimate:
                 )
 
     def disp_at_s(self, t_s, depth_um=None, grid=False):
+        """Get the displacement at time t_s and depth depth_um
+
+        ! This must be implemented by subclasses!
+
+        Arguments
+        ---------
+        t_s, depth_um : floats or np.arrays
+            These should be numbers or arrays of the same shape corresponding to times
+            (in seconds) and depths (in microns)
+        grid : boolean, optional
+            If true, treat t_s and depth_um as x/y coordinates of a 2d rectangular grid.
+            Then, if t_s and depth_um have `n` and `m` elements, this computes displacements
+            on the `n x m` grid.
+
+        Returns
+        -------
+        An array of displacements in microns with the same shape as depth_um (when grid=False).
+        """
         raise NotImplementedError
 
     def correct_s(self, t_s, depth_um, grid=False):
+        """Return the registered depths for events at times `t_s` and depths `depth_um`
+
+        Arguments
+        ---------
+        t_s, depth_um : floats or np.arrays
+            These should be numbers or arrays of the same shape corresponding to times
+            (in seconds) and depths (in microns)
+        grid : boolean, optional
+            If true, treat t_s and depth_um as x/y coordinates of a 2d rectangular grid.
+            Then, if t_s and depth_um have `n` and `m` elements, this applies displacements
+            on the `n x m` grid.
+
+        Returns
+        -------
+        An array of motion-corrected depth positions in microns with the same shape as
+        depth_um (when grid=False).
+        """
         return depth_um - self.disp_at_s(t_s, depth_um, grid=grid)
 
 
@@ -96,6 +134,27 @@ class RigidMotionEstimate(MotionEstimate):
         )
 
     def disp_at_s(self, t_s, depth_um=None, grid=False):
+        """Get the displacement at times `t_s` and depths `depth_um`
+
+        Arguments
+        ---------
+        t_s : float or np.array
+            A float or array of floats with times in seconds at which you want to
+            get the estimated displacement
+        depth_um : optional, float or np.array
+            Since the motion estimate is rigid, the displacement does not depend
+            on the depth, and this is ignored. It's just here to make a uniform
+            interface across MotionEstimate classes, so that users don't need to
+            worry about which one they have.
+        grid : boolean, optional
+            If true, treat t_s and depth_um as x/y coordinates of a 2d rectangular grid.
+            Then, if t_s and depth_um have `n` and `m` elements, this computes displacements
+            on the `n x m` grid.
+
+        Returns
+        -------
+        An array of displacements in microns with the same shape as t_s (when grid=False).
+        """
         return self.lerp(t_s)
 
 
@@ -137,19 +196,32 @@ class NonrigidMotionEstimate(MotionEstimate):
         self.d_low = self.spatial_bin_centers_um.min()
         self.d_high = self.spatial_bin_centers_um.max()
 
-        # self.lerp = RectBivariateSpline(
-        #     self.spatial_bin_centers_um,
-        #     self.time_bin_centers_s,
-        #     self.displacement,
-        #     kx=1,
-        #     ky=1,
-        # )
         self.lerp = RegularGridInterpolator(
             (self.spatial_bin_centers_um, self.time_bin_centers_s),
             self.displacement,
         )
 
     def disp_at_s(self, t_s, depth_um=None, grid=False):
+        """Get the displacement at times `t_s` and depths `depth_um`
+
+        Arguments
+        ---------
+        t_s : float or np.array
+            A float or array of floats with times in seconds at which you want to
+            get the estimated displacement
+        depth_um : optional, float or np.array
+            Since the motion estimate is nonrigid, the displacement depends on depth.
+            This should be an array of the same shape as t_s giving the depths for each
+            of the times in t_s.
+        grid : boolean, optional
+            If true, treat t_s and depth_um as x/y coordinates of a 2d rectangular grid.
+            Then, if t_s and depth_um have `n` and `m` elements, this computes displacements
+            on the `n x m` grid.
+
+        Returns
+        -------
+        An array of displacements in microns with the same shape as t_s (when grid=False).
+        """
         assert not grid
         if np.array(depth_um).shape != t_s.shape:
             assert np.array(depth_um).size == 1
@@ -174,7 +246,7 @@ class IdentityMotionEstimate(MotionEstimate):
 
 
 class ComposeMotionEstimates(MotionEstimate):
-    """Compose motion estimates, if each was estimated from the previous' corrections"""
+    """Compose two motion estimates, applying them in forward order (not reverse!)."""
 
     def __init__(self, *motion_estimates):
         super().__init__(None)
@@ -203,7 +275,7 @@ def get_motion_estimate(
     window_weights=None,
     upsample_by_windows=False,
 ):
-    """Helper function for construction MotionEstimates.
+    """Helper function for constructing MotionEstimates
 
     This would be the suggested way to instantiate RigidMotionEstimates
     and NonrigidMotionEstimates, since it handles both cases equally.
@@ -279,6 +351,8 @@ def speed_limit_filter(me, speed_limit_um_per_s=5000.0):
 
 
 def resample_to_new_time_bins(me, new_time_bin_centers_s=None):
+    """Take a MotionEstimate and use its interpolation to 
+    """
     displacement_up = me.disp_at_s(
         new_time_bin_centers_s, me.spatial_bin_centers_um, grid=True
     )
