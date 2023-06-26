@@ -17,7 +17,7 @@ def register_online_lfp(
     win_margin_um=None,
     # weighting arguments
     mincorr=0.8,
-    do_window_weights=False,
+    mincorr_percentile=None,
     mincorr_percentile_nneighbs=20,
     soft=False,
     # low-level arguments
@@ -29,6 +29,48 @@ def register_online_lfp(
     pbar=True,
 ):
     """Online registration of a preprocessed LFP recording
+
+    Arguments
+    ---------
+    lfp_recording : spikeinterface recording object
+    rigid : boolean, optional
+        If True, window-related arguments are ignored and we do rigid registration
+    chunk_len_s : float
+        Length of chunks (in seconds) that the recording is broken into for online
+        registration. The computational speed of the method is a function of the
+        number of samples this corresponds to, and things can get slow if it is
+        set high enough that the number of samples per chunk is bigger than ~10,000.
+        But, it can't be set too low or the algorithm doesn't have enough data
+        to work with. The default is set assuming sampling rate of 250Hz, leading
+        to 2500 samples per chunk.
+    max_disp_um : number, optional
+        This is the ceiling on the possible displacement estimates. It should be
+        set to a number which is larger than the allowed displacement in a single
+        chunk. Setting it as small as possible (while following that rule) can speed
+        things up.
+    win_shape, win_step_um, win_scale_um, win_margin_um
+        Nonrigid window-related arguments
+        The depth domain will be broken up into windows with shape controlled by win_shape,
+        spaced by win_step_um at a margin of win_margin_um from the boundary, and with
+        width controlled by win_scale_um.
+    mincorr : float in [0,1]
+        Minimum maximal correlation between time bins such that they will be included
+        in the optimization
+    mincorr_percentile, mincorr_percentile_nneighbs
+        If mincorr_percentile is set to a number in [0, 100], then mincorr will be replaced
+        by this percentile of the correlations of neighbors within mincorr_percentile_nneighbs
+        time bins of each other
+    device : string or torch.device
+        Controls torch device
+
+    Returns
+    -------
+    me : motion_util.MotionEstimate
+        A motion estimate object. me.displacement is the displacement trace, but this object
+        includes methods for getting the displacement at different times and depths; see
+        the documentation in the motion_util.py file.
+    extra : dict
+        Dict containing extra info for debugging
     """
     geom = lfp_recording.get_channel_locations()
     fs = lfp_recording.get_sampling_frequency()
@@ -39,9 +81,9 @@ def register_online_lfp(
     # need lfp-specific defaults
     weights_kw = dict(
         mincorr=mincorr,
-        do_window_weights=do_window_weights,
         mincorr_percentile_nneighbs=mincorr_percentile_nneighbs,
         soft=soft,
+        do_window_weights=False,
         max_dt_s=None,
     )
     xcorr_kw = xcorr_kw if xcorr_kw is not None else {}

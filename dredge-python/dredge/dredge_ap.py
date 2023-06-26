@@ -37,6 +37,8 @@ def register(
     do_window_weights=True,
     weights_threshold_low=0.2,
     weights_threshold_high=0.2,
+    mincorr_percentile=None,
+    mincorr_percentile_nneighbs=None,
     # low-level keyword args
     thomas_kw=None,
     xcorr_kw=None,
@@ -73,7 +75,7 @@ def register(
         This has a .displacement attribute which is the displacement estimate in a
         (num_nonrigid_blocks, num_time_bins) array. It also has properties describing
         the time and spatial bins, and methods for getting the displacement at a particular
-        time and depth.
+        time and depth. See the documentation of these classes in motion_util.py.
     extra : dict
         This has extra info about what happened during registration
     """
