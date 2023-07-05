@@ -220,17 +220,18 @@ class NonrigidMotionEstimate(MotionEstimate):
         -------
         An array of displacements in microns with the same shape as t_s (when grid=False).
         """
-        assert not grid
         if np.asarray(depth_um).shape != np.asarray(t_s).shape:
             assert np.asarray(depth_um).size == 1
             depth_um = np.full_like(t_s, depth_um)
-        return self.lerp(
-            np.c_[
-                np.clip(depth_um, self.d_low, self.d_high),
-                np.clip(t_s, self.t_low, self.t_high),
-            ],
-            # grid=grid,
-        )
+        if grid:
+            t_s, depth_um = np.meshgrid(
+                t_s, depth_um, indexing="ij", sparse=True
+            )
+        points = np.c_[
+            np.clip(depth_um, self.d_low, self.d_high).ravel(),
+            np.clip(t_s, self.t_low, self.t_high).ravel(),
+        ]
+        return self.lerp(points).reshape(t_s.shape)
 
 
 class IdentityMotionEstimate(MotionEstimate):
