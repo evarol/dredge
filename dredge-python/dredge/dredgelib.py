@@ -5,13 +5,8 @@ import torch.nn.functional as F
 from scipy.linalg import solve
 from tqdm.auto import trange
 
-from .motion_util import (
-    spike_raster,
-    get_bins,
-    get_motion_estimate,
-    get_window_domains,
-)
-
+from .motion_util import (get_bins, get_motion_estimate, get_window_domains,
+                          spike_raster)
 
 default_raster_kw = dict(
     amp_scale_fn=None,
@@ -474,8 +469,8 @@ def xcorr_windows(
         raster_b_ = raster_a_
 
     # estimate each window's displacement
-    Ds = np.empty((B, T0, T1), dtype=np.float32)
-    Cs = np.empty((B, T0, T1), dtype=np.float32)
+    Ds = np.zeros((B, T0, T1), dtype=np.float32)
+    Cs = np.zeros((B, T0, T1), dtype=np.float32)
     block_iter = trange(B, desc="Cross correlation") if pbar else range(B)
     for b in block_iter:
         window = windows_[b]
@@ -512,10 +507,11 @@ def calc_corr_decent_pair(
     raster_b,
     weights=None,
     disp=None,
-    batch_size=32,
+    batch_size=256,
     normalized=True,
     centered=True,
     possible_displacement=None,
+    max_dt_bins=None,
     device=None,
 ):
     """Calculate TxT normalized xcorr and best displacement matrices
@@ -563,25 +559,29 @@ def calc_corr_decent_pair(
         )
 
     # process rasters into the tensors we need for conv2ds below
-    raster_a = torch.as_tensor(raster_a, dtype=torch.float32, device=device).T
+    raster_a = torch.as_tensor(raster_a.T, dtype=torch.float32, device=device)
     # normalize over depth for normalized (uncentered) xcorrs
-    raster_b = torch.as_tensor(raster_b, dtype=torch.float32, device=device).T
+    raster_b = torch.as_tensor(raster_b.T, dtype=torch.float32, device=device)
 
-    D = np.empty((Ta, Tb), dtype=np.float32)
-    C = np.empty((Ta, Tb), dtype=np.float32)
-    for i in range(0, Tb, batch_size):
-        corr = normxcorr1d(
-            raster_a,
-            raster_b[i : i + batch_size],
-            weights=weights,
-            padding=disp,
-            normalized=normalized,
-            centered=centered,
-        )
-        max_corr, best_disp_inds = torch.max(corr, dim=2)
-        best_disp = possible_displacement[best_disp_inds.cpu()]
-        D[:, i : i + batch_size] = best_disp.T
-        C[:, i : i + batch_size] = max_corr.cpu().T
+    D = np.zeros((Ta, Tb), dtype=np.float32)
+    C = np.zeros((Ta, Tb), dtype=np.float32)
+    for i in range(0, Ta, batch_size):
+        for j in range(0, Tb, batch_size):
+            dt_bins = min(i - j, i + batch_size - j, i - j - batch_size)
+            if max_dt_bins and dt_bins > max_dt_bins:
+                continue
+            corr = normxcorr1d(
+                raster_a[i : i + batch_size],
+                raster_b[j : j + batch_size],
+                weights=weights,
+                padding=disp,
+                normalized=normalized,
+                centered=centered,
+            )
+            max_corr, best_disp_inds = torch.max(corr, dim=2)
+            best_disp = possible_displacement[best_disp_inds.cpu()]
+            D[i : i + batch_size, j : j + batch_size] = best_disp.T
+            C[i : i + batch_size, j : j + batch_size] = max_corr.cpu().T
 
     return D, C
 
