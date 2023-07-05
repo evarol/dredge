@@ -1,16 +1,9 @@
 import numpy as np
-from .motion_util import (
-    get_windows,
-    spike_raster,
-    xcorr_windows,
-    get_motion_estimate,
-)
-from .dredgelib import (
-    default_raster_kw,
-    weight_correlation_matrix,
-    thomas_solve,
-)
 
+from .dredgelib import (default_raster_kw, thomas_solve,
+                        weight_correlation_matrix)
+from .motion_util import (get_motion_estimate, get_windows, spike_raster,
+                          xcorr_windows)
 
 default_weights_kw = dict(
     mincorr=0.1,
@@ -49,6 +42,8 @@ def register(
     weights_kw = default_weights_kw | weights_kw
     raster_kw["bin_s"] = bin_s
     raster_kw["bin_um"] = bin_um
+    if "max_dt_s" in weights_kw and weights_kw["max_dt_s"]:
+        xcorr_kw["max_dt_bins"] = np.ceil(weights_kw["max_dt_s"] / bin_s)
 
     # this will store return values other than the MotionEstimate
     extra = {}
