@@ -87,12 +87,10 @@ def register_online_lfp(
         bin_um=np.median(np.diff(geom[:, 1])),
         max_disp_um=max_disp_um,
         pbar=False,
-        xcorr_kw=xcorr_kw,
         device=device,
+        **xcorr_kw,
     )
     threshold_kw = dict(
-        mincorr=mincorr,
-        mincorr_percentile=mincorr_precentile,
         mincorr_percentile_nneighbs=mincorr_percentile_nneighbs,
         in_place=True,
         soft=soft,
@@ -123,7 +121,12 @@ def register_online_lfp(
         traces0.T, windows, geom[:, 1], win_scale_um, **full_xcorr_kw
     )
     full_xcorr_kw["max_disp_um"] = max_disp_um
-    Ss0, mincorr0 = threshold_correlation_matrix(Cs0, **threshold_kw)
+    Ss0, mincorr0 = threshold_correlation_matrix(
+        Cs0,
+        mincorr=mincorr,
+        mincorr_percentile=mincorr_percentile,
+        **threshold_kw,
+    )
     if save_full:
         extra["D"] = [Ds0]
         extra["C"] = [Cs0]
