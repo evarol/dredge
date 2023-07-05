@@ -24,6 +24,7 @@ def register(
     post_transform=np.log1p,
     gaussian_smoothing_sigma_um=1,
     gaussian_smoothing_sigma_s=1,
+    avg_in_bin=False,
     # weights arguments
     mincorr=0.1,
     max_dt_s=1000,
@@ -83,6 +84,7 @@ def register(
         gaussian_smoothing_sigma_s=gaussian_smoothing_sigma_s,
         bin_s=bin_s,
         bin_um=bin_um,
+        avg_in_bin=avg_in_bin,
     )
     weights_kw = dict(
         mincorr=mincorr,
