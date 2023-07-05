@@ -11,16 +11,17 @@ This library has 3 sections:
 The main registration APIs in dredge_ap and drege_lfp use these helpers.
 """
 import numpy as np
-from scipy.interpolate import RectBivariateSpline, interp1d
+from scipy.interpolate import RegularGridInterpolator, interp1d
 from scipy.ndimage import gaussian_filter1d
-from tqdm.auto import trange
-
 
 # -- motion estimate helper classes
 
 
 class MotionEstimate:
     """MotionEstimate
+
+    This class won't be instantiated, users interact with subclasses below
+    which are usually instantiated by the `get_motion_estimate()` function.
 
     MotionEstimate and its subclasses manage your displacement estimate
     and its temporal (and optionally spatial, if nonrigid) domain(s),
@@ -60,9 +61,44 @@ class MotionEstimate:
                 )
 
     def disp_at_s(self, t_s, depth_um=None, grid=False):
+        """Get the displacement at time t_s and depth depth_um
+
+        ! This must be implemented by subclasses!
+
+        Arguments
+        ---------
+        t_s, depth_um : floats or np.arrays
+            These should be numbers or arrays of the same shape corresponding to times
+            (in seconds) and depths (in microns)
+        grid : boolean, optional
+            If true, treat t_s and depth_um as x/y coordinates of a 2d rectangular grid.
+            Then, if t_s and depth_um have `n` and `m` elements, this computes displacements
+            on the `n x m` grid.
+
+        Returns
+        -------
+        An array of displacements in microns with the same shape as depth_um (when grid=False).
+        """
         raise NotImplementedError
 
     def correct_s(self, t_s, depth_um, grid=False):
+        """Return the registered depths for events at times `t_s` and depths `depth_um`
+
+        Arguments
+        ---------
+        t_s, depth_um : floats or np.arrays
+            These should be numbers or arrays of the same shape corresponding to times
+            (in seconds) and depths (in microns)
+        grid : boolean, optional
+            If true, treat t_s and depth_um as x/y coordinates of a 2d rectangular grid.
+            Then, if t_s and depth_um have `n` and `m` elements, this applies displacements
+            on the `n x m` grid.
+
+        Returns
+        -------
+        An array of motion-corrected depth positions in microns with the same shape as
+        depth_um (when grid=False).
+        """
         return depth_um - self.disp_at_s(t_s, depth_um, grid=grid)
 
 
@@ -96,6 +132,27 @@ class RigidMotionEstimate(MotionEstimate):
         )
 
     def disp_at_s(self, t_s, depth_um=None, grid=False):
+        """Get the displacement at times `t_s` and depths `depth_um`
+
+        Arguments
+        ---------
+        t_s : float or np.array
+            A float or array of floats with times in seconds at which you want to
+            get the estimated displacement
+        depth_um : optional, float or np.array
+            Since the motion estimate is rigid, the displacement does not depend
+            on the depth, and this is ignored. It's just here to make a uniform
+            interface across MotionEstimate classes, so that users don't need to
+            worry about which one they have.
+        grid : boolean, optional
+            If true, treat t_s and depth_um as x/y coordinates of a 2d rectangular grid.
+            Then, if t_s and depth_um have `n` and `m` elements, this computes displacements
+            on the `n x m` grid.
+
+        Returns
+        -------
+        An array of displacements in microns with the same shape as t_s (when grid=False).
+        """
         return self.lerp(t_s)
 
 
@@ -137,19 +194,42 @@ class NonrigidMotionEstimate(MotionEstimate):
         self.d_low = self.spatial_bin_centers_um.min()
         self.d_high = self.spatial_bin_centers_um.max()
 
-        self.lerp = RectBivariateSpline(
-            self.spatial_bin_centers_um,
-            self.time_bin_centers_s,
+        self.lerp = RegularGridInterpolator(
+            (self.spatial_bin_centers_um, self.time_bin_centers_s),
             self.displacement,
-            kx=1,
-            ky=1,
         )
 
     def disp_at_s(self, t_s, depth_um=None, grid=False):
+        """Get the displacement at times `t_s` and depths `depth_um`
+
+        Arguments
+        ---------
+        t_s : float or np.array
+            A float or array of floats with times in seconds at which you want to
+            get the estimated displacement
+        depth_um : optional, float or np.array
+            Since the motion estimate is nonrigid, the displacement depends on depth.
+            This should be an array of the same shape as t_s giving the depths for each
+            of the times in t_s.
+        grid : boolean, optional
+            If true, treat t_s and depth_um as x/y coordinates of a 2d rectangular grid.
+            Then, if t_s and depth_um have `n` and `m` elements, this computes displacements
+            on the `n x m` grid.
+
+        Returns
+        -------
+        An array of displacements in microns with the same shape as t_s (when grid=False).
+        """
+        assert not grid
+        if np.asarray(depth_um).shape != np.asarray(t_s).shape:
+            assert np.asarray(depth_um).size == 1
+            depth_um = np.full_like(t_s, depth_um)
         return self.lerp(
-            np.clip(depth_um, self.d_low, self.d_high),
-            np.clip(t_s, self.t_low, self.t_high),
-            grid=grid,
+            np.c_[
+                np.clip(depth_um, self.d_low, self.d_high),
+                np.clip(t_s, self.t_low, self.t_high),
+            ],
+            # grid=grid,
         )
 
 
@@ -164,7 +244,7 @@ class IdentityMotionEstimate(MotionEstimate):
 
 
 class ComposeMotionEstimates(MotionEstimate):
-    """Compose motion estimates, if each was estimated from the previous' corrections"""
+    """Compose two motion estimates, applying them in forward order (not reverse!)."""
 
     def __init__(self, *motion_estimates):
         super().__init__(None)
@@ -193,7 +273,7 @@ def get_motion_estimate(
     window_weights=None,
     upsample_by_windows=False,
 ):
-    """Helper function for construction MotionEstimates.
+    """Helper function for constructing MotionEstimates
 
     This would be the suggested way to instantiate RigidMotionEstimates
     and NonrigidMotionEstimates, since it handles both cases equally.
@@ -274,6 +354,7 @@ def speed_limit_filter(me, speed_limit_um_per_s=5000.0):
 
 
 def resample_to_new_time_bins(me, new_time_bin_centers_s=None):
+    """Take a MotionEstimate and use its interpolation to"""
     displacement_up = me.disp_at_s(
         new_time_bin_centers_s, me.spatial_bin_centers_um, grid=True
     )
@@ -282,6 +363,43 @@ def resample_to_new_time_bins(me, new_time_bin_centers_s=None):
         time_bin_centers_s=new_time_bin_centers_s,
         spatial_bin_centers_um=me.spatial_bin_centers_um,
     )
+
+
+# -- preprocessing helpers
+
+
+def fill_gaps_along_depth(recording):
+    """A naive method for filling missing channels in recordings."""
+    import spikeinterface.preprocessing as sppx
+
+    # figure out where the gaps are and how big they are relative
+    # to the rest of the channel spacings
+    geom = recording.get_channel_locations()
+    geom_y = geom[:, 1]
+    dy = np.diff(geom_y)
+    dy_unique = np.unique(dy)
+    if dy_unique.size <= 1:
+        # nothing to do, all channel spacings are the same
+        return recording
+    pitch = dy_unique.min()
+
+    # figure out where the new channels should go
+    new_locs = []
+    for j in np.flatnonzero(dy > pitch):
+        dyj = dy[j]
+        n_add = int(dyj // pitch - 1)
+        at_j = geom[geom_y == geom_y[j]].mean(0)
+        at_next = geom[geom_y == geom_y[j] + dyj].mean(0)
+        center_x = 0.5 * (at_j[0] + at_next[0])
+        for k in range(n_add):
+            new_locs.append([center_x, at_j[1] + (k + 1) * dyj])
+
+    # use a spikeinterface preprocessing chain to interpolate
+    # into these gaps
+    rec = sppx.add_fake_channels(recording, len(new_locs), new_locs)
+    rec = sppx.depth_order(rec)
+    bad_channels = [id for id in rec.channel_ids if id.startswith("FakeChan")]
+    return sppx.interpolate_bad_channels(rec, bad_channels)
 
 
 # -- plotting
@@ -294,7 +412,7 @@ def show_raster(
     raster, spatial_bin_edges_um, time_bin_edges_s, ax, **imshow_kwargs
 ):
     """Display a spike activity raster as created with `spike_raster` below"""
-    ax.imshow(
+    return ax.imshow(
         raster,
         extent=(*time_bin_edges_s[[0, -1]], *spatial_bin_edges_um[[0, -1]]),
         origin="lower",

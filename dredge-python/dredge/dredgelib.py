@@ -5,19 +5,16 @@ import torch.nn.functional as F
 from scipy.linalg import solve
 from tqdm.auto import trange
 
-from .motion_util import (get_bins, get_motion_estimate, get_window_domains,
-                          spike_raster)
+from .motion_util import get_bins, get_window_domains, spike_raster
 
-default_raster_kw = dict(
-    amp_scale_fn=None,
-    post_transform=np.log1p,
-    gaussian_smoothing_sigma_um=1,
-)
+DEFAULT_LAMBDA_T = 1.0
+DEFAULT_EPS = 1e-4
 
 
 # -- linear algebra, Newton method solver, block tridiagonal (Thomas) solver
 
-def laplacian(n, wink=True, eps=1e-3, lambd=1.0):
+
+def laplacian(n, wink=True, eps=DEFAULT_EPS, lambd=1.0):
     lap = (lambd + eps) * np.eye(n)
     if wink:
         lap[0, 0] -= 0.5 * lambd
@@ -100,9 +97,9 @@ def newton_solve_rigid(
 def thomas_solve(
     Ds,
     Us,
-    lambda_t=1.0,
+    lambda_t=DEFAULT_LAMBDA_T,
     lambda_s=1.0,
-    eps=1e-4,
+    eps=DEFAULT_EPS,
     P_prev=None,
     Ds_prevcur=None,
     Us_prevcur=None,
@@ -134,15 +131,15 @@ def thomas_solve(
         assert Ds_prevcur is not None
         assert Us_prevcur is not None
         online_kw_rhs = lambda b: dict(  # noqa
-            Pb_prev=P_prev[b].astype(np.float64),
-            Db_prevcur=Ds_prevcur[b].astype(np.float64),
-            Ub_prevcur=Us_prevcur[b].astype(np.float64),
-            Db_curprev=Ds_curprev[b].astype(np.float64),
-            Ub_curprev=Us_curprev[b].astype(np.float64),
+            Pb_prev=P_prev[b].astype(np.float64, copy=False),
+            Db_prevcur=Ds_prevcur[b].astype(np.float64, copy=False),
+            Ub_prevcur=Us_prevcur[b].astype(np.float64, copy=False),
+            Db_curprev=Ds_curprev[b].astype(np.float64, copy=False),
+            Ub_curprev=Us_curprev[b].astype(np.float64, copy=False),
         )
         online_kw_hess = lambda b: dict(  # noqa
-            Ub_prevcur=Us_prevcur[b].astype(np.float64),
-            Ub_curprev=Us_curprev[b].astype(np.float64),
+            Ub_prevcur=Us_prevcur[b].astype(np.float64, copy=False),
+            Ub_curprev=Us_curprev[b].astype(np.float64, copy=False),
         )
 
     B, T, T_ = Ds.shape
@@ -177,7 +174,9 @@ def thomas_solve(
         + Lambda_s_diag1 / 2
         + neg_hessian_likelihood_term(Us[0], **online_kw_hess(0))
     )
-    targets = np.c_[Lambda_s_offdiag, newton_rhs(Us[0], Ds[0], **online_kw_rhs(0))]
+    targets = np.c_[
+        Lambda_s_offdiag, newton_rhs(Us[0], Ds[0], **online_kw_rhs(0))
+    ]
     res = solve(alpha_hat_b, targets, assume_a="pos")
     # res = solve(alpha_hat_b, targets, assume_a="pos")
     assert res.shape == (T, T + 1)
@@ -235,7 +234,7 @@ def get_weights(
     times,
     weights_threshold_low=0.0,
     weights_threshold_high=np.inf,
-    raster_kw=default_raster_kw,
+    raster_kw=None,
     pbar=False,
 ):
     r, dbe, tbe = spike_raster(amps, depths, times, **raster_kw)
@@ -244,12 +243,6 @@ def get_weights(
     p_inds = []
     # start with rigid registration with weights=inf independently in each window
     for b in trange((len(Ds)), desc="Weights") if pbar else range(len(Ds)):
-        # rigid motion estimate in this window
-        p = newton_solve_rigid(Ds[b], Ss[b], Sigma0inv_t)[0]
-        p_inds.append(p)
-        me = get_motion_estimate(p, time_bin_edges_s=tbe)
-        depths_reg = me.correct_s(times, depths)
-
         # raster just our window's bins
         # take care when tracking start/end indices of bin centers v bin edges
         ilow, ihigh = np.flatnonzero(windows[b])[[0, -1]]
@@ -257,7 +250,7 @@ def get_weights(
         window_sliced = windows[b, ilow:ihigh]
         rr, dbr, tbr = spike_raster(
             amps,
-            depths_reg,
+            depths,
             times,
             spatial_bin_edges_um=dbe[ilow : ihigh + 1],
             time_bin_edges_s=tbe,
@@ -275,14 +268,18 @@ def get_weights(
         nspikes_threshold_low, amp_threshold_low = weights_threshold_low
         unif = np.full_like(windows[0], 1 / len(windows[0]))
         weights_threshold_low = (
-            scale_fn(amp_threshold_low) * windows @ (nspikes_threshold_low * unif)
+            scale_fn(amp_threshold_low)
+            * windows
+            @ (nspikes_threshold_low * unif)
         )
         weights_threshold_low = weights_threshold_low[:, None]
     if isinstance(weights_threshold_high, tuple):
         nspikes_threshold_high, amp_threshold_high = weights_threshold_high
         unif = np.full_like(windows[0], 1 / len(windows[0]))
         weights_threshold_high = (
-            scale_fn(amp_threshold_high) * windows @ (nspikes_threshold_high * unif)
+            scale_fn(amp_threshold_high)
+            * windows
+            @ (nspikes_threshold_high * unif)
         )
         weights_threshold_high = weights_threshold_high[:, None]
     weights_thresh = weights_orig.copy()
@@ -326,7 +323,12 @@ def threshold_correlation_matrix(
             Ss = np.square((Cs >= mincorr) * Cs)
         else:
             Ss = (Cs >= mincorr).astype(Cs.dtype)
-    if max_dt_s is not None and max_dt_s > 0 and T is not None and max_dt_s < T:
+    if (
+        max_dt_s is not None
+        and max_dt_s > 0
+        and T is not None
+        and max_dt_s < T
+    ):
         mask = la.toeplitz(
             np.r_[
                 np.ones(int(max_dt_s // bin_s), dtype=Ss.dtype),
@@ -348,14 +350,15 @@ def weight_correlation_matrix(
     mincorr_percentile=None,
     mincorr_percentile_nneighbs=20,
     max_dt_s=None,
-    lambda_t=1,
-    eps=1e-10,
+    lambda_t=DEFAULT_LAMBDA_T,
+    eps=DEFAULT_EPS,
     do_window_weights=True,
     weights_threshold_low=0.0,
     weights_threshold_high=np.inf,
-    raster_kw=default_raster_kw,
+    raster_kw=None,
     pbar=True,
 ):
+    assert raster_kw is not None
     extra = {}
     bin_s = raster_kw["bin_s"]
     bin_um = raster_kw["bin_um"]
@@ -370,7 +373,9 @@ def weight_correlation_matrix(
     B, T, T_ = Ds.shape
     assert T == T_
     assert Ds.shape == Cs.shape
-    spatial_bin_edges_um, time_bin_edges_s = get_bins(depths_um, times_s, bin_um, bin_s)
+    spatial_bin_edges_um, time_bin_edges_s = get_bins(
+        depths_um, times_s, bin_um, bin_s
+    )
     assert (T + 1,) == time_bin_edges_s.shape
     extra = {}
 
@@ -421,12 +426,6 @@ def weight_correlation_matrix(
 # -- cross-correlation tools
 
 
-default_xcorr_kw = dict(
-    centered=True,
-    normalized=True,
-)
-
-
 def xcorr_windows(
     raster_a,
     windows,
@@ -437,11 +436,10 @@ def xcorr_windows(
     bin_um=1,
     max_disp_um=None,
     pbar=True,
-    xcorr_kw=default_xcorr_kw,
+    centered=True,
+    normalized=True,
     device=None,
 ):
-    xcorr_kw = default_xcorr_kw | xcorr_kw
-
     if device is None:
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -496,7 +494,8 @@ def xcorr_windows(
             disp=padding,
             possible_displacement=poss_disp,
             device=device,
-            **xcorr_kw,
+            centered=centered,
+            normalized=normalized,
         )
 
     return Ds, Cs, max_disp_um
