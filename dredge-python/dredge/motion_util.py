@@ -330,6 +330,67 @@ def get_motion_estimate(
     )
 
 
+def get_interpolated_recording(motion_est, recording):
+    """Use spikeinterface to interpolate a recording to correct for the motion in motion_est
+
+    This handles internally translation between the sample times of recording
+    and motion_est. So, you can use this function with a motion_est computed from 250Hz
+    LFP to correct 250Hz LFP or 2500Hz LFP or 30kHz AP equally.
+
+    Arguments
+    ---------
+    motion_est : a MotionEstimate object
+    recording : a SpikeInterface recording
+        These two objects should be trimmed to the same time domain (different
+        sample times is okay, but they should have the same temporal extent in
+        seconds)
+
+    Returns
+    -------
+    rec_interpolated : spikeinterface InterpolateMotionRecording object
+    """
+    # we need to make a copy of the recording which has no times stored
+    # this is not something spikeinterface supports so we are doing it manually
+    from copy import deepcopy
+    from spikeinterface.sortingcomponents.motion_interpolation import (
+        interpolate_motion,
+    )
+
+    rec = deepcopy(recording)
+    rec._recording_segments[0].t_start = None
+    rec._recording_segments[0].time_vector = None
+
+    # fake the temporal bins
+    # we have been maintaining the metadata about time bins in our motion estimate,
+    # but again, spikeinterface is not doing this so we have to throw that info away
+    # before calling spikeinterface functions
+    dt = np.diff(motion_est.time_bin_centers_s).min()
+    temporal_bins = (
+        motion_est.time_bin_centers_s
+        - motion_est.time_bin_centers_s[0]
+        + dt / 2
+    )
+
+    # the other issue is that spikeinterface doesn't understand rigid interpolation for now
+    # so, we have to turn our rigid estimate into a nonrigid estimate
+    spatial_bins = motion_est.spatial_bin_centers_um
+    displacement = motion_est.displacement
+    if spatial_bins is None:
+        # we had a rigid motion
+        # spatial bins can be the edges of the probe?
+        geom_y = rec.get_channel_locations()[:, 1]
+        spatial_bins = [geom_y.min(), geom_y.max()]
+        # make 2 copies of our displacement so that they appear to correspond to these spatial bins
+        displacement = np.stack((displacement, displacement), axis=0)
+        assert displacement.ndim == 2 and displacement.shape[0] == 2
+
+    # now we can use correct_motion
+    rec_interpolated = interpolate_motion(
+        rec, displacement.T, temporal_bins, spatial_bins
+    )
+    return rec_interpolated
+
+
 def speed_limit_filter(me, speed_limit_um_per_s=5000.0):
     """Interpolate away outrageously huge jumps."""
     displacement = np.atleast_2d(me.displacement)
