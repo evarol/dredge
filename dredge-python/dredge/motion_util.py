@@ -11,10 +11,8 @@ This library has 3 sections:
 The main registration APIs in dredge_ap and drege_lfp use these helpers.
 """
 import numpy as np
-from scipy.interpolate import RectBivariateSpline, RegularGridInterpolator, interp1d
+from scipy.interpolate import RegularGridInterpolator, interp1d
 from scipy.ndimage import gaussian_filter1d
-from tqdm.auto import trange
-
 
 # -- motion estimate helper classes
 
@@ -101,7 +99,7 @@ class MotionEstimate:
         An array of motion-corrected depth positions in microns with the same shape as
         depth_um (when grid=False).
         """
-        return depth_um - self.disp_at_s(t_s, depth_um, grid=grid)
+        return np.asarray(depth_um) - self.disp_at_s(t_s, depth_um, grid=grid)
 
 
 class RigidMotionEstimate(MotionEstimate):
@@ -155,7 +153,7 @@ class RigidMotionEstimate(MotionEstimate):
         -------
         An array of displacements in microns with the same shape as t_s (when grid=False).
         """
-        return self.lerp(t_s)
+        return self.lerp(np.asarray(t_s))
 
 
 class NonrigidMotionEstimate(MotionEstimate):
@@ -222,17 +220,18 @@ class NonrigidMotionEstimate(MotionEstimate):
         -------
         An array of displacements in microns with the same shape as t_s (when grid=False).
         """
-        assert not grid
         if np.asarray(depth_um).shape != np.asarray(t_s).shape:
-            assert np.asarray(depth_um).size == 1
-            depth_um = np.full_like(t_s, depth_um)
-        return self.lerp(
-            np.c_[
-                np.clip(depth_um, self.d_low, self.d_high),
-                np.clip(t_s, self.t_low, self.t_high),
-            ],
-            # grid=grid,
-        )
+            if np.asarray(depth_um).size == 1:
+                depth_um = np.full_like(t_s, depth_um)
+            else:
+                assert grid
+        if grid:
+            depth_um, t_s = np.meshgrid(depth_um, t_s, indexing="ij")
+        points = np.c_[
+            np.clip(depth_um, self.d_low, self.d_high).ravel(),
+            np.clip(t_s, self.t_low, self.t_high).ravel(),
+        ]
+        return self.lerp(points).reshape(np.asarray(t_s).shape)
 
 
 class IdentityMotionEstimate(MotionEstimate):
@@ -293,7 +292,9 @@ def get_motion_estimate(
             time_bin_edges_s=time_bin_edges_s,
             time_bin_centers_s=time_bin_centers_s,
         )
-    assert any(a is not None for a in (spatial_bin_edges_um, spatial_bin_centers_um))
+    assert any(
+        a is not None for a in (spatial_bin_edges_um, spatial_bin_centers_um)
+    )
 
     # linear interpolation nonrigid
     if not upsample_by_windows:
@@ -316,7 +317,9 @@ def get_motion_estimate(
     assert window_weights.shape == displacement.shape
     # precision weighted average
     normalizer = windows.T @ window_weights
-    displacement_upsampled = (windows.T @ (displacement * window_weights)) / normalizer
+    displacement_upsampled = (
+        windows.T @ (displacement * window_weights)
+    ) / normalizer
 
     return NonrigidMotionEstimate(
         displacement_upsampled,
@@ -325,6 +328,67 @@ def get_motion_estimate(
         spatial_bin_edges_um=spatial_bin_edges_um,
         spatial_bin_centers_um=spatial_bin_centers_um,
     )
+
+
+def get_interpolated_recording(motion_est, recording):
+    """Use spikeinterface to interpolate a recording to correct for the motion in motion_est
+
+    This handles internally translation between the sample times of recording
+    and motion_est. So, you can use this function with a motion_est computed from 250Hz
+    LFP to correct 250Hz LFP or 2500Hz LFP or 30kHz AP equally.
+
+    Arguments
+    ---------
+    motion_est : a MotionEstimate object
+    recording : a SpikeInterface recording
+        These two objects should be trimmed to the same time domain (different
+        sample times is okay, but they should have the same temporal extent in
+        seconds)
+
+    Returns
+    -------
+    rec_interpolated : spikeinterface InterpolateMotionRecording object
+    """
+    # we need to make a copy of the recording which has no times stored
+    # this is not something spikeinterface supports so we are doing it manually
+    from copy import deepcopy
+    from spikeinterface.sortingcomponents.motion_interpolation import (
+        interpolate_motion,
+    )
+
+    rec = deepcopy(recording)
+    rec._recording_segments[0].t_start = None
+    rec._recording_segments[0].time_vector = None
+
+    # fake the temporal bins
+    # we have been maintaining the metadata about time bins in our motion estimate,
+    # but again, spikeinterface is not doing this so we have to throw that info away
+    # before calling spikeinterface functions
+    dt = np.diff(motion_est.time_bin_centers_s).min()
+    temporal_bins = (
+        motion_est.time_bin_centers_s
+        - motion_est.time_bin_centers_s[0]
+        + dt / 2
+    )
+
+    # the other issue is that spikeinterface doesn't understand rigid interpolation for now
+    # so, we have to turn our rigid estimate into a nonrigid estimate
+    spatial_bins = motion_est.spatial_bin_centers_um
+    displacement = motion_est.displacement
+    if spatial_bins is None:
+        # we had a rigid motion
+        # spatial bins can be the edges of the probe?
+        geom_y = rec.get_channel_locations()[:, 1]
+        spatial_bins = [geom_y.min(), geom_y.max()]
+        # make 2 copies of our displacement so that they appear to correspond to these spatial bins
+        displacement = np.stack((displacement, displacement), axis=0)
+        assert displacement.ndim == 2 and displacement.shape[0] == 2
+
+    # now we can use correct_motion
+    rec_interpolated = interpolate_motion(
+        rec, displacement.T, temporal_bins, spatial_bins
+    )
+    return rec_interpolated
 
 
 def speed_limit_filter(me, speed_limit_um_per_s=5000.0):
@@ -337,7 +401,8 @@ def speed_limit_filter(me, speed_limit_um_per_s=5000.0):
     if valid.all():
         return me
     valid_lerp = [
-        interp1d(me.time_bin_centers_s[v], d[v]) for v, d in zip(valid, displacement)
+        interp1d(me.time_bin_centers_s[v], d[v])
+        for v, d in zip(valid, displacement)
     ]
     filtered_displacement = [vl(me.time_bin_centers_s) for vl in valid_lerp]
 
@@ -351,8 +416,7 @@ def speed_limit_filter(me, speed_limit_um_per_s=5000.0):
 
 
 def resample_to_new_time_bins(me, new_time_bin_centers_s=None):
-    """Take a MotionEstimate and use its interpolation to 
-    """
+    """Take a MotionEstimate and use its interpolation to"""
     displacement_up = me.disp_at_s(
         new_time_bin_centers_s, me.spatial_bin_centers_um, grid=True
     )
@@ -406,7 +470,9 @@ def fill_gaps_along_depth(recording):
 # spikes plotting helpers
 
 
-def show_raster(raster, spatial_bin_edges_um, time_bin_edges_s, ax, **imshow_kwargs):
+def show_raster(
+    raster, spatial_bin_edges_um, time_bin_edges_s, ax, **imshow_kwargs
+):
     """Display a spike activity raster as created with `spike_raster` below"""
     return ax.imshow(
         raster,
@@ -474,7 +540,9 @@ def show_registered_raster(me, amps, depths, times, ax, **imshow_kwargs):
     )
 
 
-def show_displacement_heatmap(me, ax, spatial_bin_centers_um=None, **imshow_kwargs):
+def show_displacement_heatmap(
+    me, ax, spatial_bin_centers_um=None, **imshow_kwargs
+):
     """Plot a spatiotemporal heatmap of displacement for the MotionEstimate me."""
     if spatial_bin_centers_um is None:
         spatial_bin_centers_um = me.spatial_bin_centers_um
@@ -699,7 +767,9 @@ def si_get_windows(
 
     """
     if spatial_bin_centers is None:
-        spatial_bin_centers = 0.5 * (spatial_bin_edges[1:] + spatial_bin_edges[:-1])
+        spatial_bin_centers = 0.5 * (
+            spatial_bin_edges[1:] + spatial_bin_edges[:-1]
+        )
     n = spatial_bin_centers.size
 
     if rigid:
@@ -720,10 +790,13 @@ def si_get_windows(
         for win_center in non_rigid_window_centers:
             if win_shape == "gaussian":
                 win = np.exp(
-                    -((spatial_bin_centers - win_center) ** 2) / (2 * win_sigma_um**2)
+                    -((spatial_bin_centers - win_center) ** 2)
+                    / (2 * win_sigma_um**2)
                 )
             elif win_shape == "rect":
-                win = np.abs(spatial_bin_centers - win_center) < (win_sigma_um / 2.0)
+                win = np.abs(spatial_bin_centers - win_center) < (
+                    win_sigma_um / 2.0
+                )
                 win = win.astype("float64")
             elif win_shape == "triangle":
                 center_dist = np.abs(spatial_bin_centers - win_center)

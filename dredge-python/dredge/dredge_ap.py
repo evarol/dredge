@@ -1,16 +1,8 @@
 import numpy as np
-from .motion_util import (
-    get_windows,
-    spike_raster,
-    get_motion_estimate,
-)
-from .dredgelib import (
-    weight_correlation_matrix,
-    xcorr_windows,
-    thomas_solve,
-    DEFAULT_LAMBDA_T,
-    DEFAULT_EPS,
-)
+
+from .dredgelib import (DEFAULT_EPS, DEFAULT_LAMBDA_T, thomas_solve,
+                        weight_correlation_matrix, xcorr_windows)
+from .motion_util import get_motion_estimate, get_windows, spike_raster
 
 
 def register(
@@ -31,6 +23,7 @@ def register(
     post_transform=np.log1p,
     gaussian_smoothing_sigma_um=1,
     gaussian_smoothing_sigma_s=1,
+    avg_in_bin=False,
     # weights arguments
     mincorr=0.1,
     max_dt_s=1000,
@@ -42,14 +35,14 @@ def register(
     # low-level keyword args
     thomas_kw=None,
     xcorr_kw=None,
-    # misc    
+    # misc
     device=None,
     pbar=True,
     save_full=False,
     precomputed_D_C_maxdisp=None,
 ):
     """Estimate motion from spikes
-    
+
     Arguments
     ---------
     amps, depths, times : arrays of shape (n_spikes,)
@@ -68,7 +61,7 @@ def register(
         Maximum possible displacement in microns
     thomas_kw, xcorr_kw, raster_kw, weights_kw
         These dictionaries allow setting parameters for fine control over the registration
-    
+
     Returns
     -------
     motion_est : a motion_util.MotionEstimate object
@@ -81,6 +74,8 @@ def register(
     """
     thomas_kw = thomas_kw if thomas_kw is not None else {}
     xcorr_kw = xcorr_kw if xcorr_kw is not None else {}
+    if max_dt_s:
+        xcorr_kw["max_dt_bins"] = np.ceil(max_dt_s / bin_s)
     raster_kw = dict(
         amp_scale_fn=amp_scale_fn,
         post_transform=post_transform,
@@ -88,6 +83,7 @@ def register(
         gaussian_smoothing_sigma_s=gaussian_smoothing_sigma_s,
         bin_s=bin_s,
         bin_um=bin_um,
+        avg_in_bin=avg_in_bin,
     )
     weights_kw = dict(
         mincorr=mincorr,

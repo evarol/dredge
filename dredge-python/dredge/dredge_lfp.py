@@ -1,8 +1,9 @@
 import numpy as np
 from tqdm.auto import trange
-from .motion_util import get_windows, get_motion_estimate
-from .dredgelib import xcorr_windows, threshold_correlation_matrix, thomas_solve
 
+from .dredgelib import (thomas_solve, threshold_correlation_matrix,
+                        xcorr_windows)
+from .motion_util import get_motion_estimate, get_windows
 
 
 def register_online_lfp(
@@ -86,12 +87,10 @@ def register_online_lfp(
         bin_um=np.median(np.diff(geom[:, 1])),
         max_disp_um=max_disp_um,
         pbar=False,
-        xcorr_kw=xcorr_kw,
         device=device,
+        **xcorr_kw,
     )
     threshold_kw = dict(
-        mincorr=mincorr,
-        mincorr_percentile=mincorr_precentile,
         mincorr_percentile_nneighbs=mincorr_percentile_nneighbs,
         in_place=True,
         soft=soft,
@@ -122,7 +121,12 @@ def register_online_lfp(
         traces0.T, windows, geom[:, 1], win_scale_um, **full_xcorr_kw
     )
     full_xcorr_kw["max_disp_um"] = max_disp_um
-    Ss0, mincorr0 = threshold_correlation_matrix(Cs0, **threshold_kw)
+    Ss0, mincorr0 = threshold_correlation_matrix(
+        Cs0,
+        mincorr=mincorr,
+        mincorr_percentile=mincorr_percentile,
+        **threshold_kw,
+    )
     if save_full:
         extra["D"] = [Ds0]
         extra["C"] = [Cs0]
@@ -137,7 +141,12 @@ def register_online_lfp(
     # -- loop through chunks
     chunk_starts = range(T_chunk, T_total, T_chunk)
     if pbar:
-        chunk_starts = trange(T_chunk, T_total, T_chunk, desc=f"Online chunks [{chunk_len_s}s each]")
+        chunk_starts = trange(
+            T_chunk,
+            T_total,
+            T_chunk,
+            desc=f"Online chunks [{chunk_len_s}s each]",
+        )
     for t1 in chunk_starts:
         t2 = min(T_total, t1 + T_chunk)
         traces1 = lfp_recording.get_traces(start_frame=t1, end_frame=t2)
@@ -157,9 +166,14 @@ def register_online_lfp(
             traces1.T, windows, geom[:, 1], win_scale_um, **full_xcorr_kw
         )
         Ss1, mincorr1 = threshold_correlation_matrix(
-            Cs1, mincorr_percentile=mincorr_percentile, mincorr=mincorr, **threshold_kw
+            Cs1,
+            mincorr_percentile=mincorr_percentile,
+            mincorr=mincorr,
+            **threshold_kw,
         )
-        Ss10, _ = threshold_correlation_matrix(Cs10, mincorr=mincorr1, **threshold_kw)
+        Ss10, _ = threshold_correlation_matrix(
+            Cs10, mincorr=mincorr1, **threshold_kw
+        )
         extra["mincorrs"].append(mincorr1)
 
         if save_full:

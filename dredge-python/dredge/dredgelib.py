@@ -5,18 +5,14 @@ import torch.nn.functional as F
 from scipy.linalg import solve
 from tqdm.auto import trange
 
-from .motion_util import (
-    spike_raster,
-    get_bins,
-    get_motion_estimate,
-    get_window_domains,
-)
+from .motion_util import get_bins, get_window_domains, spike_raster
 
 DEFAULT_LAMBDA_T = 1.0
 DEFAULT_EPS = 1e-4
 
 
 # -- linear algebra, Newton method solver, block tridiagonal (Thomas) solver
+
 
 def laplacian(n, wink=True, eps=DEFAULT_EPS, lambd=1.0):
     lap = (lambd + eps) * np.eye(n)
@@ -178,7 +174,9 @@ def thomas_solve(
         + Lambda_s_diag1 / 2
         + neg_hessian_likelihood_term(Us[0], **online_kw_hess(0))
     )
-    targets = np.c_[Lambda_s_offdiag, newton_rhs(Us[0], Ds[0], **online_kw_rhs(0))]
+    targets = np.c_[
+        Lambda_s_offdiag, newton_rhs(Us[0], Ds[0], **online_kw_rhs(0))
+    ]
     res = solve(alpha_hat_b, targets, assume_a="pos")
     # res = solve(alpha_hat_b, targets, assume_a="pos")
     assert res.shape == (T, T + 1)
@@ -270,14 +268,18 @@ def get_weights(
         nspikes_threshold_low, amp_threshold_low = weights_threshold_low
         unif = np.full_like(windows[0], 1 / len(windows[0]))
         weights_threshold_low = (
-            scale_fn(amp_threshold_low) * windows @ (nspikes_threshold_low * unif)
+            scale_fn(amp_threshold_low)
+            * windows
+            @ (nspikes_threshold_low * unif)
         )
         weights_threshold_low = weights_threshold_low[:, None]
     if isinstance(weights_threshold_high, tuple):
         nspikes_threshold_high, amp_threshold_high = weights_threshold_high
         unif = np.full_like(windows[0], 1 / len(windows[0]))
         weights_threshold_high = (
-            scale_fn(amp_threshold_high) * windows @ (nspikes_threshold_high * unif)
+            scale_fn(amp_threshold_high)
+            * windows
+            @ (nspikes_threshold_high * unif)
         )
         weights_threshold_high = weights_threshold_high[:, None]
     weights_thresh = weights_orig.copy()
@@ -321,7 +323,12 @@ def threshold_correlation_matrix(
             Ss = np.square((Cs >= mincorr) * Cs)
         else:
             Ss = (Cs >= mincorr).astype(Cs.dtype)
-    if max_dt_s is not None and max_dt_s > 0 and T is not None and max_dt_s < T:
+    if (
+        max_dt_s is not None
+        and max_dt_s > 0
+        and T is not None
+        and max_dt_s < T
+    ):
         mask = la.toeplitz(
             np.r_[
                 np.ones(int(max_dt_s // bin_s), dtype=Ss.dtype),
@@ -366,7 +373,9 @@ def weight_correlation_matrix(
     B, T, T_ = Ds.shape
     assert T == T_
     assert Ds.shape == Cs.shape
-    spatial_bin_edges_um, time_bin_edges_s = get_bins(depths_um, times_s, bin_um, bin_s)
+    spatial_bin_edges_um, time_bin_edges_s = get_bins(
+        depths_um, times_s, bin_um, bin_s
+    )
     assert (T + 1,) == time_bin_edges_s.shape
     extra = {}
 
@@ -426,6 +435,7 @@ def xcorr_windows(
     rigid=False,
     bin_um=1,
     max_disp_um=None,
+    max_dt_bins=None,
     pbar=True,
     centered=True,
     normalized=True,
@@ -458,8 +468,8 @@ def xcorr_windows(
         raster_b_ = raster_a_
 
     # estimate each window's displacement
-    Ds = np.empty((B, T0, T1), dtype=np.float32)
-    Cs = np.empty((B, T0, T1), dtype=np.float32)
+    Ds = np.zeros((B, T0, T1), dtype=np.float32)
+    Cs = np.zeros((B, T0, T1), dtype=np.float32)
     block_iter = trange(B, desc="Cross correlation") if pbar else range(B)
     for b in block_iter:
         window = windows_[b]
@@ -487,6 +497,7 @@ def xcorr_windows(
             device=device,
             centered=centered,
             normalized=normalized,
+            max_dt_bins=max_dt_bins,
         )
 
     return Ds, Cs, max_disp_um
@@ -497,10 +508,11 @@ def calc_corr_decent_pair(
     raster_b,
     weights=None,
     disp=None,
-    batch_size=32,
+    batch_size=512,
     normalized=True,
     centered=True,
     possible_displacement=None,
+    max_dt_bins=None,
     device=None,
 ):
     """Calculate TxT normalized xcorr and best displacement matrices
@@ -548,25 +560,30 @@ def calc_corr_decent_pair(
         )
 
     # process rasters into the tensors we need for conv2ds below
-    raster_a = torch.as_tensor(raster_a, dtype=torch.float32, device=device).T
+    # convert to TxD device floats
+    raster_a = torch.as_tensor(raster_a.T, dtype=torch.float32, device=device)
     # normalize over depth for normalized (uncentered) xcorrs
-    raster_b = torch.as_tensor(raster_b, dtype=torch.float32, device=device).T
+    raster_b = torch.as_tensor(raster_b.T, dtype=torch.float32, device=device)
 
-    D = np.empty((Ta, Tb), dtype=np.float32)
-    C = np.empty((Ta, Tb), dtype=np.float32)
-    for i in range(0, Tb, batch_size):
-        corr = normxcorr1d(
-            raster_a,
-            raster_b[i : i + batch_size],
-            weights=weights,
-            padding=disp,
-            normalized=normalized,
-            centered=centered,
-        )
-        max_corr, best_disp_inds = torch.max(corr, dim=2)
-        best_disp = possible_displacement[best_disp_inds.cpu()]
-        D[:, i : i + batch_size] = best_disp.T
-        C[:, i : i + batch_size] = max_corr.cpu().T
+    D = np.zeros((Ta, Tb), dtype=np.float32)
+    C = np.zeros((Ta, Tb), dtype=np.float32)
+    for i in range(0, Ta, batch_size):
+        for j in range(0, Tb, batch_size):
+            dt_bins = abs(min(i - j, i + batch_size - j, i - j - batch_size))
+            if max_dt_bins and dt_bins > max_dt_bins:
+                continue
+            corr = normxcorr1d(
+                raster_a[i : i + batch_size],
+                raster_b[j : j + batch_size],
+                weights=weights,
+                padding=disp,
+                normalized=normalized,
+                centered=centered,
+            )
+            max_corr, best_disp_inds = torch.max(corr, dim=2)
+            best_disp = possible_displacement[best_disp_inds.cpu()]
+            D[i : i + batch_size, j : j + batch_size] = best_disp.T
+            C[i : i + batch_size, j : j + batch_size] = max_corr.cpu().T
 
     return D, C
 
