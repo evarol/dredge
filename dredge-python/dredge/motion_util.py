@@ -99,7 +99,7 @@ class MotionEstimate:
         An array of motion-corrected depth positions in microns with the same shape as
         depth_um (when grid=False).
         """
-        return depth_um - self.disp_at_s(t_s, depth_um, grid=grid)
+        return np.asarray(depth_um) - self.disp_at_s(t_s, depth_um, grid=grid)
 
 
 class RigidMotionEstimate(MotionEstimate):
@@ -153,7 +153,7 @@ class RigidMotionEstimate(MotionEstimate):
         -------
         An array of displacements in microns with the same shape as t_s (when grid=False).
         """
-        return self.lerp(t_s)
+        return self.lerp(np.asarray(t_s))
 
 
 class NonrigidMotionEstimate(MotionEstimate):
@@ -231,7 +231,7 @@ class NonrigidMotionEstimate(MotionEstimate):
             np.clip(depth_um, self.d_low, self.d_high).ravel(),
             np.clip(t_s, self.t_low, self.t_high).ravel(),
         ]
-        return self.lerp(points).reshape(t_s.shape)
+        return self.lerp(points).reshape(np.asarray(t_s).shape)
 
 
 class IdentityMotionEstimate(MotionEstimate):

@@ -435,6 +435,7 @@ def xcorr_windows(
     rigid=False,
     bin_um=1,
     max_disp_um=None,
+    max_dt_bins=None,
     pbar=True,
     centered=True,
     normalized=True,
@@ -496,6 +497,7 @@ def xcorr_windows(
             device=device,
             centered=centered,
             normalized=normalized,
+            max_dt_bins=max_dt_bins,
         )
 
     return Ds, Cs, max_disp_um
@@ -506,7 +508,7 @@ def calc_corr_decent_pair(
     raster_b,
     weights=None,
     disp=None,
-    batch_size=256,
+    batch_size=512,
     normalized=True,
     centered=True,
     possible_displacement=None,
@@ -558,6 +560,7 @@ def calc_corr_decent_pair(
         )
 
     # process rasters into the tensors we need for conv2ds below
+    # convert to TxD device floats
     raster_a = torch.as_tensor(raster_a.T, dtype=torch.float32, device=device)
     # normalize over depth for normalized (uncentered) xcorrs
     raster_b = torch.as_tensor(raster_b.T, dtype=torch.float32, device=device)
@@ -566,7 +569,7 @@ def calc_corr_decent_pair(
     C = np.zeros((Ta, Tb), dtype=np.float32)
     for i in range(0, Ta, batch_size):
         for j in range(0, Tb, batch_size):
-            dt_bins = min(i - j, i + batch_size - j, i - j - batch_size)
+            dt_bins = abs(min(i - j, i + batch_size - j, i - j - batch_size))
             if max_dt_bins and dt_bins > max_dt_bins:
                 continue
             corr = normxcorr1d(
