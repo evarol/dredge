@@ -1,7 +1,7 @@
 import numpy as np
 
-from .dredgelib import (DEFAULT_EPS, DEFAULT_LAMBDA_T, default_raster_kw,
-                        thomas_solve, weight_correlation_matrix)
+from .dredgelib import (DEFAULT_EPS, DEFAULT_LAMBDA_T, thomas_solve,
+                        weight_correlation_matrix)
 from .motion_util import (get_motion_estimate, get_windows, spike_raster,
                           xcorr_windows)
 
