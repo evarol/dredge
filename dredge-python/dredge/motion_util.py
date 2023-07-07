@@ -416,6 +416,19 @@ def show_raster(raster, spatial_bin_edges_um, time_bin_edges_s, ax, **imshow_kwa
     )
 
 
+def show_spike_raster(amps, depths, times, ax, **imshow_kwargs):
+    """Display a spike activity raster as created with `spike_raster` below"""
+    raster, spatial_bin_edges_um, time_bin_edges_s = spike_raster(
+        amps, depths, times
+    )
+    return ax.imshow(
+        raster,
+        extent=(*time_bin_edges_s[[0, -1]], *spatial_bin_edges_um[[0, -1]]),
+        origin="lower",
+        **imshow_kwargs,
+    )
+
+
 def plot_me_traces(
     me,
     ax,
