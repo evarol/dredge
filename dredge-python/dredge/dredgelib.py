@@ -569,7 +569,9 @@ def calc_corr_decent_pair(
     C = np.zeros((Ta, Tb), dtype=np.float32)
     for i in range(0, Ta, batch_size):
         for j in range(0, Tb, batch_size):
-            dt_bins = abs(min(i - j, i + batch_size - j, i - j - batch_size))
+            dt_bins = min(
+                abs(i - j), abs(i + batch_size - j), abs(i - j - batch_size)
+            )
             if max_dt_bins and dt_bins > max_dt_bins:
                 continue
             corr = normxcorr1d(
