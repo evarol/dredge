@@ -330,7 +330,9 @@ def get_motion_estimate(
     )
 
 
-def get_interpolated_recording(motion_est, recording):
+def get_interpolated_recording(
+    motion_est, recording, border_mode="remove_channels"
+):
     """Use spikeinterface to interpolate a recording to correct for the motion in motion_est
 
     This handles internally translation between the sample times of recording
@@ -387,7 +389,11 @@ def get_interpolated_recording(motion_est, recording):
 
     # now we can use correct_motion
     rec_interpolated = interpolate_motion(
-        rec, displacement.T, temporal_bins, spatial_bins
+        rec,
+        displacement.T,
+        temporal_bins,
+        spatial_bins,
+        border_mode=border_mode,
     )
     return rec_interpolated
 
