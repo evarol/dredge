@@ -250,8 +250,8 @@ class ComposeMotionEstimates(MotionEstimate):
     def __init__(self, *motion_estimates):
         super().__init__(None)
         self.motion_estimates = motion_estimates
-        self.time_bin_edges_s = motion_estimates[0].time_bin_edges_s
-        self.time_bin_centers_s = motion_estimates[0].time_bin_centers_s
+        self.time_bin_edges_s = motion_estimates[-1].time_bin_edges_s
+        self.time_bin_centers_s = motion_estimates[-1].time_bin_centers_s
 
     def disp_at_s(self, t_s, depth_um=None, grid=False):
         disp = np.zeros_like(t_s)
@@ -351,12 +351,13 @@ def get_interpolated_recording(motion_est, recording):
     """
     # we need to make a copy of the recording which has no times stored
     # this is not something spikeinterface supports so we are doing it manually
-    from copy import deepcopy
+    from copy import copy
     from spikeinterface.sortingcomponents.motion_interpolation import (
         interpolate_motion,
     )
 
-    rec = deepcopy(recording)
+    rec = copy(recording)
+    rec._recording_segments[0] = copy(rec._recording_segments[0])
     rec._recording_segments[0].t_start = None
     rec._recording_segments[0].time_vector = None
 
@@ -502,6 +503,8 @@ def plot_me_traces(
     depths_um=None,
     label=False,
     zero_times=False,
+    t_start=None,
+    t_end=None,
     **plot_kwargs,
 ):
     """Plot the displacement estimates for the MotionEstimate me as lines."""
@@ -510,20 +513,29 @@ def plot_me_traces(
     if depths_um is None:
         depths_um = [sum(ax.get_ylim()) / 2]
 
-    t_offset = me.time_bin_centers_s[0] if zero_times else 0
+    times = me.time_bin_centers_s
+    t_offset = times[0] if zero_times else 0
+    if t_start is not None:
+        times = times[times >= t_start]
+    if t_start is not None:
+        times = times[times <= t_end]
+        
 
+    lines = []
     for b, depth in enumerate(depths_um):
-        disp = me.disp_at_s(me.time_bin_centers_s, depth_um=depth)
+        disp = me.disp_at_s(times, depth_um=depth)
         if isinstance(label, str):
             lab = label
         else:
             lab = f"bin {b}" if label else None
-        ax.plot(
-            me.time_bin_centers_s - t_offset,
+        l = ax.plot(
+            times - t_offset,
             depth + offset + disp,
             label=lab,
             **plot_kwargs,
         )
+        lines.extend(l)
+    return lines
 
 
 def show_registered_raster(me, amps, depths, times, ax, **imshow_kwargs):
@@ -574,9 +586,11 @@ def show_lfp_image(
     microns=False,
     aspect="auto",
     batched_mode=False,
+    traces=None,
+    origin="upper",
     **imshow_kwargs,
 ):
-    if batched_mode:
+    if traces is None and batched_mode:
         traces = np.concatenate(
             [
                 lfp_recording.get_traces(
@@ -585,7 +599,7 @@ def show_lfp_image(
                 for t0 in range(start_sample, end_sample, 10)
             ]
         )
-    else:
+    elif traces is None:
         traces = lfp_recording.get_traces(
             0, start_sample, end_sample, return_scaled=volts
         )
@@ -600,14 +614,17 @@ def show_lfp_image(
 
     if microns:
         geom_y = lfp_recording.get_channel_locations()[:, 1]
-        extent_y = geom_y.max(), geom_y.min()
+        extent_y = geom_y.min(), geom_y.max()
         ylabel = "depth (microns)"
     else:
         extent_y = 0, lfp_recording.get_num_channels()
         ylabel = "channels"
 
+    if origin == "lower":
+        extent_y = extent_y[1], extent_y[0]
+
     extent = [*extent_t, *extent_y]
-    im = ax.imshow(traces.T, extent=extent, aspect=aspect, **imshow_kwargs)
+    im = ax.imshow(traces.T, extent=extent, aspect=aspect, origin=origin, **imshow_kwargs)
     ax.set_xlabel(xlabel)
     ax.set_ylabel(ylabel)
 
