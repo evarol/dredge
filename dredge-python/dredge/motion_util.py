@@ -109,7 +109,7 @@ class RigidMotionEstimate(MotionEstimate):
         time_bin_edges_s=None,
         time_bin_centers_s=None,
     ):
-        displacement = np.asarray(displacement).squeeze()
+        displacement = np.atleast_1d(np.asarray(displacement).squeeze())
 
         assert displacement.ndim == 1
         if time_bin_edges_s is not None:
@@ -119,7 +119,7 @@ class RigidMotionEstimate(MotionEstimate):
             assert time_bin_centers_s.shape == displacement.shape
 
         super().__init__(
-            displacement.squeeze(),
+            displacement,
             time_bin_edges_s=time_bin_edges_s,
             time_bin_centers_s=time_bin_centers_s,
         )
@@ -234,18 +234,15 @@ class NonrigidMotionEstimate(MotionEstimate):
         return self.lerp(points).reshape(np.asarray(t_s).shape)
 
 
-class IdentityMotionEstimate(MotionEstimate):
+class IdentityMotionEstimate(RigidMotionEstimate):
     """The motion estimate with no motion."""
 
     def __init__(self):
-        super().__init__(None)
-
-    def disp_at_s(self, t_s, depth_um=None, grid=False):
-        return np.zeros_like(t_s)
+        super().__init__(np.array([0.0]), time_bin_centers_s=np.array([0.0]))
 
 
 class ComposeMotionEstimates(MotionEstimate):
-    """Compose two motion estimates, applying them in forward order (not reverse!)."""
+    """Compose motion estimates, applying them in forward order (not reverse!)."""
 
     def __init__(self, *motion_estimates):
         super().__init__(None)
@@ -254,6 +251,8 @@ class ComposeMotionEstimates(MotionEstimate):
         self.time_bin_centers_s = motion_estimates[0].time_bin_centers_s
 
     def disp_at_s(self, t_s, depth_um=None, grid=False):
+        assert not grid
+
         disp = np.zeros_like(t_s)
         if depth_um is None:
             depth_um = np.zeros_like(t_s)
