@@ -8,26 +8,32 @@ from tqdm.auto import trange
 from .motion_util import get_bins, get_window_domains, spike_raster
 
 DEFAULT_LAMBDA_T = 1.0
-DEFAULT_EPS = 1e-4
+DEFAULT_EPS = 1e-3
 
 
 # -- linear algebra, Newton method solver, block tridiagonal (Thomas) solver
 
 
-def laplacian(n, wink=True, eps=DEFAULT_EPS, lambd=1.0):
-    lap = (lambd + eps) * np.eye(n)
+def laplacian(n, wink=True, eps=DEFAULT_EPS, lambd=1.0, ridge_mask=None):
+    lap = np.zeros((n, n))
+    if ridge_mask is None:
+        diag = lambd + eps
+    else:
+        diag = lambd + eps * ridge_mask
+    np.fill_diagonal(lap, diag)
     if wink:
         lap[0, 0] -= 0.5 * lambd
         lap[-1, -1] -= 0.5 * lambd
-    lap -= np.diag(0.5 * lambd * np.ones(n - 1), k=1)
-    lap -= np.diag(0.5 * lambd * np.ones(n - 1), k=-1)
+    # fill diagonal using a for loop for space reasons when this is large
+    for i in range(n - 1):
+        lap[i, i + 1] -= 0.5 * lambd
+        lap[i + 1, i] -= 0.5 * lambd
     return lap
 
 
 def neg_hessian_likelihood_term(Ub, Ub_prevcur=None, Ub_curprev=None):
     # negative Hessian of p(D | p) inside a block
-    negHUb = -Ub.copy()
-    negHUb -= Ub.T
+    negHUb = -Ub - Ub.T
     diagonal_terms = np.diagonal(negHUb) + Ub.sum(1) + Ub.sum(0)
     if Ub_prevcur is None:
         np.fill_diagonal(negHUb, diagonal_terms)
@@ -105,6 +111,7 @@ def thomas_solve(
     Us_prevcur=None,
     Ds_curprev=None,
     Us_curprev=None,
+    pbar=False,
 ):
     """Block tridiagonal algorithm, special cased to our setting
 
@@ -146,7 +153,9 @@ def thomas_solve(
     assert T == T_
     assert Us.shape == Ds.shape
     # temporal prior matrix
-    L_t = laplacian(T, eps=eps, lambd=lambda_t)
+    had_weights = (Us > 0).any(axis=2)
+    flat_weights_mask = had_weights.all(axis=0)
+    L_t = [laplacian(T, eps=eps, lambd=lambda_t, ridge_mask=w) for w in had_weights]
     extra = dict(L_t=L_t)
 
     # just solve independent problems when there's no spatial regularization
@@ -156,7 +165,7 @@ def thomas_solve(
         extra["HU"] = np.zeros((B, T, T))
         for b in range(B):
             P[b], extra["HU"][b] = newton_solve_rigid(
-                Ds[b], Us[b], L_t, **online_kw_rhs(b)
+                Ds[b], Us[b], L_t[b], **online_kw_rhs(b)
             )
         return P, extra
 
@@ -164,13 +173,17 @@ def thomas_solve(
     # the first and last diagonal blocks are
     # Lambda_s_diag0 = (lambda_s / 2) * (L_t + eps * np.eye(T))
     # the other diagonal blocks are
-    Lambda_s_diag1 = (lambda_s + eps) * laplacian(T, eps=eps, lambd=1.0)
+    # Lambda_s_diag1 = lambda_s * (
+    #     + laplacian(T, eps=eps, lambd=lambda_t, ridge_mask=flat_weights_mask)
+    #     + laplacian(T, eps=eps, lambd=0, ridge_mask=flat_weights_mask)
+    # )
+    Lambda_s_diag1 = laplacian(T, eps=2 * eps, lambd=lambda_s, ridge_mask=flat_weights_mask)
     # and the off-diagonal blocks are
-    Lambda_s_offdiag = (-lambda_s / 2) * laplacian(T, eps=eps, lambd=1.0)
+    Lambda_s_offdiag = laplacian(T, eps=0, lambd=-lambda_s/2)
 
     # initialize block-LU stuff and forward variable
     alpha_hat_b = (
-        L_t
+        L_t[0]
         + Lambda_s_diag1 / 2
         + neg_hessian_likelihood_term(Us[0], **online_kw_hess(0))
     )
@@ -184,10 +197,10 @@ def thomas_solve(
     ys = [res[:, T]]
 
     # forward pass
-    for b in range(1, B):
+    for b in (trange(1, B, desc="Solve") if pbar else range(1, B)):
         s_factor = 1 if b < B - 1 else 0.5
         Ab = (
-            L_t
+            L_t[b]
             + Lambda_s_diag1 * s_factor
             + neg_hessian_likelihood_term(Us[b], **online_kw_hess(b))
         )
@@ -357,6 +370,7 @@ def weight_correlation_matrix(
     weights_threshold_high=np.inf,
     raster_kw=None,
     pbar=True,
+    in_place=False,
 ):
     assert raster_kw is not None
     extra = {}
@@ -387,6 +401,7 @@ def weight_correlation_matrix(
         max_dt_s=max_dt_s,
         bin_s=bin_s,
         T=T,
+        in_place=in_place,
     )
     extra["S"] = Ss
     extra["mincorr"] = mincorr
@@ -414,10 +429,20 @@ def weight_correlation_matrix(
     extra["Pind"] = Pind
 
     # update noise model. we deliberately divide by zero and inf here.
+    Us = Ss if in_place else np.zeros_like(Ss)
     with np.errstate(divide="ignore"):
+        # low mem impl of U = abs(1/(1/weights_thresh+1/weights_thresh'+1/S))
+        np.reciprocal(Ss, out=Us)
         invW = 1.0 / weights_thresh
-        invWbtt = invW[:, :, None] + invW[:, None, :]
-        Us = np.abs(1.0 / (invWbtt + 1.0 / Ss))
+        Us += invW[:, :, None]
+        Us += invW[:, None, :]
+        np.reciprocal(Us, out=Us)
+        # handles possible -0s that cause issues elsewhere
+        np.abs(Us, out=Us)
+        # more readable equivalent:
+        # for b in range(B):
+        #     invWbtt = invW[b, :, None] + invW[b, None, :]
+        #     Us[b] = np.abs(1.0 / (invWbtt + 1.0 / Ss[b]))
     extra["U"] = Us
 
     return Us, extra
