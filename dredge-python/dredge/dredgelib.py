@@ -152,9 +152,14 @@ def thomas_solve(
     B, T, T_ = Ds.shape
     assert T == T_
     assert Us.shape == Ds.shape
-    # temporal prior matrix
+
+    # figure out which temporal bins are included in the problem
+    # these are used to figure out where epsilon can be added
+    # for numerical stability without changing the solution
     had_weights = (Us > 0).any(axis=2)
-    flat_weights_mask = had_weights.all(axis=0)
+    had_weights[~had_weights.any(axis=1)] = 1
+
+    # temporal prior matrix
     L_t = [laplacian(T, eps=eps, lambd=lambda_t, ridge_mask=w) for w in had_weights]
     extra = dict(L_t=L_t)
 
@@ -172,19 +177,19 @@ def thomas_solve(
     # spatial prior is a sparse, block tridiagonal kronecker product
     # the first and last diagonal blocks are
     # Lambda_s_diag0 = (lambda_s / 2) * (L_t + eps * np.eye(T))
+    Lambda_s_diagb = laplacian(T, eps=eps, lambd=lambda_s / 2, ridge_mask=had_weights[0])
     # the other diagonal blocks are
     # Lambda_s_diag1 = lambda_s * (
     #     + laplacian(T, eps=eps, lambd=lambda_t, ridge_mask=flat_weights_mask)
     #     + laplacian(T, eps=eps, lambd=0, ridge_mask=flat_weights_mask)
     # )
-    Lambda_s_diag1 = laplacian(T, eps=2 * eps, lambd=lambda_s, ridge_mask=flat_weights_mask)
     # and the off-diagonal blocks are
     Lambda_s_offdiag = laplacian(T, eps=0, lambd=-lambda_s/2)
 
     # initialize block-LU stuff and forward variable
     alpha_hat_b = (
         L_t[0]
-        + Lambda_s_diag1 / 2
+        + Lambda_s_diagb
         + neg_hessian_likelihood_term(Us[0], **online_kw_hess(0))
     )
     targets = np.c_[
@@ -198,10 +203,14 @@ def thomas_solve(
 
     # forward pass
     for b in (trange(1, B, desc="Solve") if pbar else range(1, B)):
-        s_factor = 1 if b < B - 1 else 0.5
+        if b < B - 1:
+            Lambda_s_diagb = laplacian(T, eps=eps, lambd=lambda_s, ridge_mask=had_weights[b])
+        else:
+            Lambda_s_diagb = laplacian(T, eps=eps, lambd=lambda_s / 2, ridge_mask=had_weights[b])
+
         Ab = (
             L_t[b]
-            + Lambda_s_diag1 * s_factor
+            + Lambda_s_diagb
             + neg_hessian_likelihood_term(Us[b], **online_kw_hess(b))
         )
         alpha_hat_b = Ab - Lambda_s_offdiag @ gamma_hats[b - 1]
@@ -387,10 +396,6 @@ def weight_correlation_matrix(
     B, T, T_ = Ds.shape
     assert T == T_
     assert Ds.shape == Cs.shape
-    spatial_bin_edges_um, time_bin_edges_s = get_bins(
-        depths_um, times_s, bin_um, bin_s
-    )
-    assert (T + 1,) == time_bin_edges_s.shape
     extra = {}
 
     Ss, mincorr = threshold_correlation_matrix(
