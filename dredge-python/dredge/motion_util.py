@@ -109,7 +109,7 @@ class RigidMotionEstimate(MotionEstimate):
         time_bin_edges_s=None,
         time_bin_centers_s=None,
     ):
-        displacement = np.asarray(displacement).squeeze()
+        displacement = np.atleast_1d(np.asarray(displacement).squeeze())
 
         assert displacement.ndim == 1
         if time_bin_edges_s is not None:
@@ -119,7 +119,7 @@ class RigidMotionEstimate(MotionEstimate):
             assert time_bin_centers_s.shape == displacement.shape
 
         super().__init__(
-            displacement.squeeze(),
+            displacement,
             time_bin_edges_s=time_bin_edges_s,
             time_bin_centers_s=time_bin_centers_s,
         )
@@ -234,18 +234,15 @@ class NonrigidMotionEstimate(MotionEstimate):
         return self.lerp(points).reshape(np.asarray(t_s).shape)
 
 
-class IdentityMotionEstimate(MotionEstimate):
+class IdentityMotionEstimate(RigidMotionEstimate):
     """The motion estimate with no motion."""
 
     def __init__(self):
-        super().__init__(None)
-
-    def disp_at_s(self, t_s, depth_um=None, grid=False):
-        return np.zeros_like(t_s)
+        super().__init__(np.array([0.0]), time_bin_centers_s=np.array([0.0]))
 
 
 class ComposeMotionEstimates(MotionEstimate):
-    """Compose two motion estimates, applying them in forward order (not reverse!)."""
+    """Compose motion estimates, applying them in forward order (not reverse!)."""
 
     def __init__(self, *motion_estimates):
         super().__init__(None)
@@ -254,6 +251,8 @@ class ComposeMotionEstimates(MotionEstimate):
         self.time_bin_centers_s = motion_estimates[-1].time_bin_centers_s
 
     def disp_at_s(self, t_s, depth_um=None, grid=False):
+        assert not grid
+
         disp = np.zeros_like(t_s)
         if depth_um is None:
             depth_um = np.zeros_like(t_s)
@@ -675,19 +674,12 @@ def show_lfp_me_traces(
 
 # -- bins / windows / rasters
 
-
-def get_bins(depths, times, bin_um, bin_s):
-    spatial_bin_edges_um = np.arange(
-        np.floor(depths.min()),
-        np.ceil(depths.max()) + bin_um,
-        bin_um,
+def get_bins(x, bin_h):
+    return np.arange(
+        np.floor(x.min()),
+        np.ceil(x.max()) + bin_h,
+        bin_h,
     )
-    time_bin_edges_s = np.arange(
-        np.floor(times.min()),
-        np.ceil(times.max()) + bin_s,
-        bin_s,
-    )
-    return spatial_bin_edges_um, time_bin_edges_s
 
 
 def get_windows(
@@ -717,6 +709,8 @@ def get_windows(
         win_sigma_um=win_sigma_um,
         win_shape=win_shape,
     )
+    if windows.ndim == 1:
+        windows = windows[None, :]
 
     windows /= windows.sum(axis=1, keepdims=True)
     windows[windows < zero_threshold] = 0
@@ -895,14 +889,10 @@ def spike_raster(
     assert amps.shape == depths.shape == times.shape
     assert amps.ndim == 1
 
-    if (spatial_bin_edges_um is None) or (time_bin_edges_s is None):
-        _spatial_bin_edges_um, _time_bin_edges_s = get_bins(
-            depths, times, bin_um, bin_s
-        )
-        if spatial_bin_edges_um is None:
-            spatial_bin_edges_um = _spatial_bin_edges_um
-        if time_bin_edges_s is None:
-            time_bin_edges_s = _time_bin_edges_s
+    if spatial_bin_edges_um is None:
+        spatial_bin_edges_um = get_bins(depths, bin_um)
+    if time_bin_edges_s is None:
+        time_bin_edges_s = get_bins(times, bin_s)
 
     if amp_scale_fn is None:
         weights = amps

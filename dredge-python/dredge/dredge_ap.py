@@ -1,4 +1,5 @@
 import numpy as np
+import gc
 
 from .dredgelib import (DEFAULT_EPS, DEFAULT_LAMBDA_T, thomas_solve,
                         weight_correlation_matrix, xcorr_windows)
@@ -145,28 +146,33 @@ def register(
         eps=thomas_kw.get("eps", DEFAULT_EPS),
         raster_kw=raster_kw,
         pbar=pbar,
+        in_place=not save_full,
         **weights_kw,
     )
     extra.update({k: wextra[k] for k in wextra if k not in ("S", "U")})
     if save_full:
         extra.update({k: wextra[k] for k in wextra if k in ("S", "U")})
+    del wextra
+    if save_full:
+        extra["D"] = Ds
+        extra["C"] = Cs
+    del Cs
+    gc.collect()
 
     # solve for P
     # now we can do our tridiag solve
-    displacement, textra = thomas_solve(Ds, Us, **thomas_kw)
+    displacement, textra = thomas_solve(Ds, Us, pbar=pbar, **thomas_kw)
+    if save_full:
+        extra.update(textra)
+    del textra
     me = get_motion_estimate(
         displacement,
         spatial_bin_centers_um=window_centers,
         time_bin_edges_s=time_bin_edges_s,
     )
-    if save_full:
-        extra.update(textra)
 
     extra["windows"] = windows
     extra["window_centers"] = window_centers
     extra["max_disp_um"] = max_disp_um
-    if save_full:
-        extra["D"] = Ds
-        extra["C"] = Cs
 
     return me, extra
