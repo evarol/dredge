@@ -593,7 +593,7 @@ def show_lfp_image(
     aspect="auto",
     batched_mode=False,
     traces=None,
-    origin="upper",
+    origin="lower",
     **imshow_kwargs,
 ):
     if traces is None and batched_mode:
@@ -620,7 +620,7 @@ def show_lfp_image(
 
     if microns:
         geom_y = lfp_recording.get_channel_locations()[:, 1]
-        extent_y = geom_y.min(), geom_y.max()
+        extent_y = geom_y.max(), geom_y.min()
         ylabel = "depth (microns)"
     else:
         extent_y = 0, lfp_recording.get_num_channels()
