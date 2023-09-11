@@ -77,5 +77,18 @@ This should open your browser. Use the file explorer on the left to navigate to 
 We're also porting the AP version of this code into [spikeinterface][spikeinterface]. Check out the demo: https://github.com/catalystneuro/spike-sorting-hackathon/blob/main/projects/motion-correction-in-si/motion_estimation_and_correction_demo.ipynb. (Older version on SI reports, which has outputs saved: https://spikeinterface.github.io/blog/spikeinterface-motion-estimation/)
 
 
+## Code structure
+
+ - `dredgelib.py`
+   - Library code (cross-correlations and linear algebra to solve batch and online centralization problems)
+ - `motion_util.py`
+   - `MotionEstimate` objects. The function `get_motion_estimate` takes the matrix of displacement vectors and the corresponding time and spatial bin edges or centers, and returns a `RigidMotionEstimate` or `NonrigidMotionEstimate`. These classes implement `disp_at_s()` and `correct_s` which take in times and depths and return the corresponding estimated displacements or motion-corrected positions
+   - `spike_raster`, which takes spike times, depths, and amplitudes, and returns a 2d raster map
+   - Binning and window helpers
+   - Plotting helpers (e.g., `show_spike_raster`, `plot_me_traces`, ...)
+ - `dredge_ap`: `register()` function registers spike data
+ - `dredge_lfp`: `register_online_lfp()` function implements online algorithm for LFP data
+
+
 [mamba]: https://github.com/conda-forge/miniforge#mambaforge
 [spikeinterface]: https://github.com/SpikeInterface/spikeinterface
