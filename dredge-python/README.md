@@ -2,7 +2,12 @@
 
 ## Introduction
 
-This library contains Python code for motion estimation and correction for high density LFP and spiking data. A [demo notebook](notebook/lfp_registration_and_interpolation_demo.ipynb) is available to see how to use this code.
+This library contains Python code for motion estimation and correction for high density LFP and spiking data. Demo notebooks are available to see how to use this code:
+ - [Spike registration](notebook/ap_registration.ipynb)
+ - [LFP-based registration and interpolation](notebook/lfp_registration_and_interpolation_demo.ipynb)
+ - [Experimental demo of chronic multi-session registration](notebook/ap_registration.ipynb)
+
+:point_right: For spike-based workflows (not LFP), SpikeInterface implements DREDge under the name "decentralized", and this is very easy to combine with motion-correction interpolation for input into spike sorters like Kilosort. We suggest to combine this with the "monopolar_triangulation" localization method (Boussard et al., Neurips). See https://spikeinterface.readthedocs.io/en/latest/modules/motion_correction.html for info!
 
 ## Installation with Conda (or Mamba)
 
