@@ -1,5 +1,6 @@
-import numpy as np
 import gc
+
+import numpy as np
 
 from .dredgelib import (DEFAULT_EPS, DEFAULT_LAMBDA_T, thomas_solve,
                         weight_correlation_matrix, xcorr_windows)

@@ -1,0 +1,5 @@
+numpy
+pytorch
+scipy
+spikeinterface
+tqdm

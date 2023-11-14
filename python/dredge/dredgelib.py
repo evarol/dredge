@@ -1,3 +1,5 @@
+import warnings
+
 import numpy as np
 import scipy.linalg as la
 import torch
@@ -96,7 +98,11 @@ def newton_solve_rigid(
         Db_curprev=Db_curprev,
         Ub_curprev=Ub_curprev,
     )
-    p = solve(Sigma0inv + negHU, targ, assume_a="pos")
+    try:
+        p = solve(Sigma0inv + negHU, targ, assume_a="pos")
+    except np.linalg.LinAlgError:
+        warnings.warn("Singular problem, using least squares.")
+        p, *_ = la.lstsq(Sigma0inv + negHU, targ)
     return p, negHU
 
 
@@ -112,6 +118,7 @@ def thomas_solve(
     Ds_curprev=None,
     Us_curprev=None,
     pbar=False,
+    bandwidth=None,
 ):
     """Block tridiagonal algorithm, special cased to our setting
 
@@ -176,15 +183,9 @@ def thomas_solve(
 
     # spatial prior is a sparse, block tridiagonal kronecker product
     # the first and last diagonal blocks are
-    # Lambda_s_diag0 = (lambda_s / 2) * (L_t + eps * np.eye(T))
     Lambda_s_diagb = laplacian(T, eps=eps, lambd=lambda_s / 2, ridge_mask=had_weights[0])
-    # the other diagonal blocks are
-    # Lambda_s_diag1 = lambda_s * (
-    #     + laplacian(T, eps=eps, lambd=lambda_t, ridge_mask=flat_weights_mask)
-    #     + laplacian(T, eps=eps, lambd=0, ridge_mask=flat_weights_mask)
-    # )
     # and the off-diagonal blocks are
-    Lambda_s_offdiag = laplacian(T, eps=0, lambd=-lambda_s/2)
+    Lambda_s_offdiag = laplacian(T, eps=0, lambd=-lambda_s / 2)
 
     # initialize block-LU stuff and forward variable
     alpha_hat_b = (
@@ -196,7 +197,6 @@ def thomas_solve(
         Lambda_s_offdiag, newton_rhs(Us[0], Ds[0], **online_kw_rhs(0))
     ]
     res = solve(alpha_hat_b, targets, assume_a="pos")
-    # res = solve(alpha_hat_b, targets, assume_a="pos")
     assert res.shape == (T, T + 1)
     gamma_hats = [res[:, :T]]
     ys = [res[:, T]]
