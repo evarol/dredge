@@ -527,10 +527,11 @@ def plot_me_traces(
         times = times[times <= t_end]
 
     lines = []
+    lab = None
     for b, depth in enumerate(depths_um):
         disp = me.disp_at_s(times, depth_um=depth, grid=True)
         disp = disp.squeeze()
-        if isinstance(label, str):
+        if isinstance(label, str) and b == len(depths_um) - 1:
             lab = label
         else:
             lab = f"bin {b}" if label else None
@@ -550,7 +551,7 @@ def show_registered_raster(me, amps, depths, times, ax, **imshow_kwargs):
     raster, spatial_bin_edges_um, time_bin_edges_s = spike_raster(
         amps, depths_reg, times
     )
-    ax.imshow(
+    return ax.imshow(
         raster,
         extent=(*time_bin_edges_s[[0, -1]], *spatial_bin_edges_um[[0, -1]]),
         origin="lower",

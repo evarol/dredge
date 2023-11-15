@@ -1,5 +1,5 @@
 numpy
-pytorch
+torch
 scipy
 spikeinterface
 tqdm
