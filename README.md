@@ -29,7 +29,7 @@ This library contains Python code for motion estimation and correction for high 
 
 ### Requirements
 
-Since DREDge is written in Python and PyTorch, it runs on Python versions after 3.8 and any system supported by PyTorch, including most recent Linux, Mac, and Windows versions. PyTorch supports both CPU and GPU-based workflows, and we suggest using the GPU version if you have a compatible graphics card (e.g., NVIDIA) since this can be much faster. See https://pytorch.org for supported operating systems.
+Since DREDge is written in Python and PyTorch, it runs on Python versions after 3.8 and any system supported by PyTorch, including most recent Linux, Mac, and Windows versions. PyTorch supports both CPU and GPU-based workflows, and we suggest using the GPU version if you have a compatible graphics card (e.g., NVIDIA) since this can be much faster. See https://pytorch.org for supported operating systems. DREDge has been tested on Linux (Ubuntu 20.04) and recent MacOS; collaborators have tested it on Windows as well.
 
 The suggested setup below should take 5-10 minutes on a typical computer and internet connection when installing everything including Python from scratch in a new `mamba` environment.
 
