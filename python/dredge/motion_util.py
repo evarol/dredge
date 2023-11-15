@@ -528,7 +528,8 @@ def plot_me_traces(
 
     lines = []
     for b, depth in enumerate(depths_um):
-        disp = me.disp_at_s(times, depth_um=depth)
+        disp = me.disp_at_s(times, depth_um=depth, grid=True)
+        disp = disp.squeeze()
         if isinstance(label, str):
             lab = label
         else:
