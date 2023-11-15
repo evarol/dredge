@@ -8,9 +8,9 @@ field potentials and from spike data, and the motion estimate can be rigid (i.e.
 not change along the probe) or nonrigid (different channels on the probe may undergo different
 motion).
 
-    :point_right: For spike-based workflows (not LFP), [SpikeInterface][spikeinterface] implements DREDge under the name `"decentralized"`, and this is very easy to combine with motion-correction interpolation for input into spike sorters such as Kilosort or Spyking Circus.
-    
-    We suggest to combine this with the "monopolar_triangulation" localization method (Boussard et al., Neurips). The "nonrigid_accurate" preset for their `correct_motion()` function combines this localization method with DREDge and an interpolator. See https://spikeinterface.readthedocs.io/en/latest/modules/motion_correction.html for info!
+> :point_right: For spike-based workflows (not LFP), [SpikeInterface][spikeinterface] implements DREDge under the name `"decentralized"`, and this is very easy to combine with motion-correction interpolation for input into spike sorters such as Kilosort or Spyking Circus.
+> 
+> We suggest to combine this with the "monopolar_triangulation" localization method (Boussard et al., Neurips). The "nonrigid_accurate" preset for their `correct_motion()` function combines this localization method with DREDge and an interpolator. See https://spikeinterface.readthedocs.io/en/latest/modules/motion_correction.html for info!
 
 Check out our preprint for more details and experiments! https://www.biorxiv.org/content/10.1101/2023.10.24.563768v1
 
