@@ -17,6 +17,7 @@ DEFAULT_EPS = 1e-3
 
 
 def laplacian(n, wink=True, eps=DEFAULT_EPS, lambd=1.0, ridge_mask=None):
+    """Construct a discrete Laplacian operator (plus eps*identity)."""
     lap = np.zeros((n, n))
     if ridge_mask is None:
         diag = lambd + eps
@@ -34,7 +35,12 @@ def laplacian(n, wink=True, eps=DEFAULT_EPS, lambd=1.0, ridge_mask=None):
 
 
 def neg_hessian_likelihood_term(Ub, Ub_prevcur=None, Ub_curprev=None):
-    # negative Hessian of p(D | p) inside a block
+    """Newton step coefficients
+
+    The negative Hessian of the non-regularized cost function inside a nonrigid block.
+    Together with the term arising from the regularization, this constructs the
+    coefficients matrix in our linear problem.
+    """
     negHUb = -Ub - Ub.T
     diagonal_terms = np.diagonal(negHUb) + Ub.sum(1) + Ub.sum(0)
     if Ub_prevcur is None:
@@ -54,6 +60,10 @@ def newton_rhs(
     Db_curprev=None,
     Ub_curprev=None,
 ):
+    """Newton step right hand side
+
+    The gradient at P=0 of the cost function, which is the right hand side of Newton's method.
+    """
     UDb = Ub * Db
     grad_at_0 = UDb.sum(1) - UDb.sum(0)
 
@@ -83,7 +93,10 @@ def newton_solve_rigid(
     Db_curprev=None,
     Ub_curprev=None,
 ):
-    """D is TxT displacement, U is TxT subsampling or soft weights matrix"""
+    """Solve the rigid Newton step
+
+    D is TxT displacement, U is TxT subsampling or soft weights matrix.
+    """
     negHU = neg_hessian_likelihood_term(
         U,
         Ub_prevcur=Ub_prevcur,
@@ -236,16 +249,6 @@ def thomas_solve(
 # -- correlation weighting and thresholding helpers
 
 
-def get_weights_in_window(window, db_unreg, db_reg, raster_reg):
-    ilow, ihigh = np.flatnonzero(window)[[0, -1]]
-    window_sliced = window[ilow : ihigh + 1]
-    tbcu = 0.5 * (db_unreg[1:] + db_unreg[:-1])
-    dlow, dhigh = tbcu[[ilow, ihigh]]
-    tbcr = 0.5 * (db_reg[1:] + db_reg[:-1])
-    rilow, rihigh = np.flatnonzero((tbcr >= dlow) & (tbcr <= dhigh))[[0, -1]]
-    return window_sliced @ raster_reg[rilow : rihigh + 1]
-
-
 def get_weights(
     Ds,
     Ss,
@@ -259,30 +262,18 @@ def get_weights(
     raster_kw=None,
     pbar=False,
 ):
+    """Compute per-time-bin weighting for each nonrigid window"""
+    # determine window-weighted raster "heat" in each nonrigid window
+    # as a function of time
     r, dbe, tbe = spike_raster(amps, depths, times, **raster_kw)
     assert windows.shape[1] == dbe.size - 1
     weights = []
     p_inds = []
-    # start with rigid registration with weights=inf independently in each window
-    for b in trange((len(Ds)), desc="Weights") if pbar else range(len(Ds)):
-        # raster just our window's bins
-        # take care when tracking start/end indices of bin centers v bin edges
+    for b in range((len(Ds))):
         ilow, ihigh = np.flatnonzero(windows[b])[[0, -1]]
-        ihigh = ihigh + 1
+        ihigh += 1
         window_sliced = windows[b, ilow:ihigh]
-        rr, dbr, tbr = spike_raster(
-            amps,
-            depths,
-            times,
-            spatial_bin_edges_um=dbe[ilow : ihigh + 1],
-            time_bin_edges_s=tbe,
-            **raster_kw,
-        )
-        assert (rr.shape[0],) == window_sliced.shape
-        if rr.sum() <= 0:
-            raise ValueError("Convergence issue when getting weights.")
-        weights.append(window_sliced @ rr)
-
+        weights.append(window_sliced @ r[ilow:ihigh])
     weights_orig = np.array(weights)
 
     scale_fn = raster_kw["post_transform"] or raster_kw["amp_scale_fn"]
@@ -381,13 +372,11 @@ def weight_correlation_matrix(
     pbar=True,
     in_place=False,
 ):
+    """Transform the correlation matrix into the weights used in optimization."""
     assert raster_kw is not None
     extra = {}
     bin_s = raster_kw["bin_s"]
-    bin_um = raster_kw["bin_um"]
 
-    # TODO: upsample_to_histogram_bin
-    # handle shapes and the rigid case
     Ds = np.asarray(Ds)
     Cs = np.asarray(Cs)
     if Ds.ndim == 2:
@@ -471,6 +460,11 @@ def xcorr_windows(
     normalized=True,
     device=None,
 ):
+    """Main computational function
+
+    Compute pairwise (time x time) maximum cross-correlation and displacement
+    matrices in each nonrigid window.
+    """
     if device is None:
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -545,7 +539,9 @@ def calc_corr_decent_pair(
     max_dt_bins=None,
     device=None,
 ):
-    """Calculate TxT normalized xcorr and best displacement matrices
+    """Weighted pairwise cross-correlation
+
+    Calculate TxT normalized xcorr and best displacement matrices
     Given a DxT raster, this computes normalized cross correlations for
     all pairs of time bins at offsets in the range [-disp, disp], by
     increments of step_size. Then it finds the best one and its

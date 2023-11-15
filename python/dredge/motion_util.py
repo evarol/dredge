@@ -153,7 +153,14 @@ class RigidMotionEstimate(MotionEstimate):
         -------
         An array of displacements in microns with the same shape as t_s (when grid=False).
         """
-        return self.lerp(np.asarray(t_s))
+        if depth_um is not None and np.asarray(depth_um).shape != np.asarray(t_s).shape:
+            assert grid
+        disp = self.lerp(np.asarray(t_s))
+        if grid:
+            disp = disp[None]
+            if depth_um is not None:
+                disp = np.broadcast_to(disp, (*np.atleast_1d(depth_um).shape, *np.atleast_1d(t_s).shape))
+        return disp
 
 
 class NonrigidMotionEstimate(MotionEstimate):
@@ -221,10 +228,7 @@ class NonrigidMotionEstimate(MotionEstimate):
         An array of displacements in microns with the same shape as t_s (when grid=False).
         """
         if np.asarray(depth_um).shape != np.asarray(t_s).shape:
-            if np.asarray(depth_um).size == 1:
-                depth_um = np.full_like(t_s, depth_um)
-            else:
-                assert grid
+            assert grid
         if grid:
             depth_um, t_s = np.meshgrid(depth_um, t_s, indexing="ij")
         points = np.c_[
@@ -437,7 +441,7 @@ def resample_to_new_time_bins(me, new_time_bin_centers_s=None):
 
 
 def fill_gaps_along_depth(recording):
-    """A naive method for filling missing channels in recordings."""
+    """A naive method for filling missing channels in (especially LFP) recordings."""
     import spikeinterface.preprocessing as sppx
 
     # figure out where the gaps are and how big they are relative
@@ -471,9 +475,6 @@ def fill_gaps_along_depth(recording):
 
 
 # -- plotting
-
-
-# spikes plotting helpers
 
 
 def show_raster(
@@ -524,7 +525,6 @@ def plot_me_traces(
         times = times[times >= t_start]
     if t_start is not None:
         times = times[times <= t_end]
-        
 
     lines = []
     for b, depth in enumerate(depths_um):

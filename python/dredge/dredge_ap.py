@@ -51,16 +51,24 @@ def register(
         The amplitudes, depths (microns) and times (seconds) of input
         spike events.
     rigid : bool
-        If True, ignore the window args and do rigid registration.
+        If True, ignore the nonrigid window args (win_shape, win_step_um, win_scale_um,
+        win_margin_um) and do rigid registration (equivalent to one flat window, which
+        is how it's implemented).
     bin_um, bin_s : numbers
         The size of the bins along depth in microns and along time in seconds.
         The returned object's .displacement array will respect these bins.
+        Increasing these can lead to more stable estimates and faster runtimes
+        at the cost of spatial and/or temporal resolution.
     win_shape, win_step_um, win_scale_um, win_margin_um
-        Control the shape ("gaussian", "rect"), step/distance between windows,
-        their scale/size, and their margin from the border (-1000 means no window
-        within 1000um of the edge of the probe)
+        Control the shape ("gaussian", "rect") of the windows, the step/distance between
+        windows, their scale/size (i.e. the bandwidth of the Gaussian kernels), and their
+        margin from the border (-1000 means there will be no window center within 1000um
+        of the edge of the probe)
     max_disp_um : number
-        Maximum possible displacement in microns
+        Maximum possible displacement in microns. If you can guess a number which is larger
+        than the largest displacement possible in your recording across a span of `max_dt_s`
+        seconds, setting this value to that number can stabilize the result and speed up
+        the algorithm (since it can do shorter cross-correlations).
     thomas_kw, xcorr_kw, raster_kw, weights_kw
         These dictionaries allow setting parameters for fine control over the registration
 
