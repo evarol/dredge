@@ -531,8 +531,9 @@ def plot_me_traces(
     for b, depth in enumerate(depths_um):
         disp = me.disp_at_s(times, depth_um=depth, grid=True)
         disp = disp.squeeze()
-        if isinstance(label, str) and b == len(depths_um) - 1:
-            lab = label
+        if isinstance(label, str):
+            if b == len(depths_um) - 1:
+                lab = label
         else:
             lab = f"bin {b}" if label else None
         l = ax.plot(
