@@ -661,6 +661,7 @@ def show_lfp_me_traces(
 
     for b, depth in enumerate(depths_um):
         disp = me.disp_at_s(times_s, depth_um=depth, grid=True)
+        disp = disp.squeeze()
         if isinstance(label, str):
             lab = label
         else:
