@@ -12,7 +12,8 @@ The main registration APIs in dredge_ap and drege_lfp use these helpers.
 """
 import numpy as np
 from scipy.interpolate import RegularGridInterpolator, interp1d
-from scipy.ndimage import gaussian_filter1d
+from scipy.ndimage import gaussian_filter1d, correlate1d
+import warnings
 
 # -- motion estimate helper classes
 
@@ -65,19 +66,19 @@ class MotionEstimate:
 
         ! This must be implemented by subclasses!
 
-        Arguments
-        ---------
-        t_s, depth_um : floats or np.arrays
-            These should be numbers or arrays of the same shape corresponding to times
-            (in seconds) and depths (in microns)
-        grid : boolean, optional
-            If true, treat t_s and depth_um as x/y coordinates of a 2d rectangular grid.
-            Then, if t_s and depth_um have `n` and `m` elements, this computes displacements
-            on the `n x m` grid.
+                        Arguments
+                        ---------
+                        t_s, depth_um : floats or np.arrays
+                            These should be numbers or arrays of the same shape corresponding to times
+                            (in seconds) and depths (in microns)
+                        grid : boolean, optional
+                            If true, treat t_s and depth_um as x/y coordinates of a 2d rectangular grid.
+                            Then, if t_s and depth_um have `n` and `m` elements, this computes displacements
+                            on the `n x m` grid.
 
-        Returns
-        -------
-        An array of displacements in microns with the same shape as depth_um (when grid=False).
+                        Returns
+                        -------
+                        An array of displacements in microns with the same shape as depth_um (when grid=False).
         """
         raise NotImplementedError
 
@@ -159,7 +160,9 @@ class RigidMotionEstimate(MotionEstimate):
         if grid:
             disp = disp[None]
             if depth_um is not None:
-                disp = np.broadcast_to(disp, (*np.atleast_1d(depth_um).shape, *np.atleast_1d(t_s).shape))
+                disp = np.broadcast_to(
+                    disp, (*np.atleast_1d(depth_um).shape, *np.atleast_1d(t_s).shape)
+                )
         return disp
 
 
@@ -295,9 +298,7 @@ def get_motion_estimate(
             time_bin_edges_s=time_bin_edges_s,
             time_bin_centers_s=time_bin_centers_s,
         )
-    assert any(
-        a is not None for a in (spatial_bin_edges_um, spatial_bin_centers_um)
-    )
+    assert any(a is not None for a in (spatial_bin_edges_um, spatial_bin_centers_um))
 
     # linear interpolation nonrigid
     if not upsample_by_windows:
@@ -320,9 +321,7 @@ def get_motion_estimate(
     assert window_weights.shape == displacement.shape
     # precision weighted average
     normalizer = windows.T @ window_weights
-    displacement_upsampled = (
-        windows.T @ (displacement * window_weights)
-    ) / normalizer
+    displacement_upsampled = (windows.T @ (displacement * window_weights)) / normalizer
 
     return NonrigidMotionEstimate(
         displacement_upsampled,
@@ -333,9 +332,7 @@ def get_motion_estimate(
     )
 
 
-def get_interpolated_recording(
-    motion_est, recording, border_mode="remove_channels"
-):
+def get_interpolated_recording(motion_est, recording, border_mode="remove_channels"):
     """Use spikeinterface to interpolate a recording to correct for the motion in motion_est
 
     This handles internally translation between the sample times of recording
@@ -372,9 +369,7 @@ def get_interpolated_recording(
     # before calling spikeinterface functions
     dt = np.diff(motion_est.time_bin_centers_s).min()
     temporal_bins = (
-        motion_est.time_bin_centers_s
-        - motion_est.time_bin_centers_s[0]
-        + dt / 2
+        motion_est.time_bin_centers_s - motion_est.time_bin_centers_s[0] + dt / 2
     )
 
     # the other issue is that spikeinterface doesn't understand rigid interpolation for now
@@ -411,8 +406,7 @@ def speed_limit_filter(me, speed_limit_um_per_s=5000.0):
     if valid.all():
         return me
     valid_lerp = [
-        interp1d(me.time_bin_centers_s[v], d[v])
-        for v, d in zip(valid, displacement)
+        interp1d(me.time_bin_centers_s[v], d[v]) for v, d in zip(valid, displacement)
     ]
     filtered_displacement = [vl(me.time_bin_centers_s) for vl in valid_lerp]
 
@@ -477,9 +471,7 @@ def fill_gaps_along_depth(recording):
 # -- plotting
 
 
-def show_raster(
-    raster, spatial_bin_edges_um, time_bin_edges_s, ax, **imshow_kwargs
-):
+def show_raster(raster, spatial_bin_edges_um, time_bin_edges_s, ax, **imshow_kwargs):
     """Display a spike activity raster as created with `spike_raster` below"""
     return ax.imshow(
         raster,
@@ -491,9 +483,7 @@ def show_raster(
 
 def show_spike_raster(amps, depths, times, ax, **imshow_kwargs):
     """Display a spike activity raster as created with `spike_raster` below"""
-    raster, spatial_bin_edges_um, time_bin_edges_s = spike_raster(
-        amps, depths, times
-    )
+    raster, spatial_bin_edges_um, time_bin_edges_s = spike_raster(amps, depths, times)
     return ax.imshow(
         raster,
         extent=(*time_bin_edges_s[[0, -1]], *spatial_bin_edges_um[[0, -1]]),
@@ -560,9 +550,7 @@ def show_registered_raster(me, amps, depths, times, ax, **imshow_kwargs):
     )
 
 
-def show_displacement_heatmap(
-    me, ax, spatial_bin_centers_um=None, **imshow_kwargs
-):
+def show_displacement_heatmap(me, ax, spatial_bin_centers_um=None, **imshow_kwargs):
     """Plot a spatiotemporal heatmap of displacement for the MotionEstimate me."""
     if spatial_bin_centers_um is None:
         spatial_bin_centers_um = me.spatial_bin_centers_um
@@ -632,7 +620,9 @@ def show_lfp_image(
         extent_y = extent_y[1], extent_y[0]
 
     extent = [*extent_t, *extent_y]
-    im = ax.imshow(traces.T, extent=extent, aspect=aspect, origin=origin, **imshow_kwargs)
+    im = ax.imshow(
+        traces.T, extent=extent, aspect=aspect, origin=origin, **imshow_kwargs
+    )
     ax.set_xlabel(xlabel)
     ax.set_ylabel(ylabel)
 
@@ -675,7 +665,120 @@ def show_lfp_me_traces(
     return l
 
 
+# -- metrics plots
+
+
+def masked_template_correlation(a, z, t, motion_est, geom, margin=0):
+    """A metric showing registration quality over time
+
+    A raster plot of spike positions over time is computed. Then,
+    the correlation to its temporal mean is computed at each time bin.
+    But, there is a twist, which is that positions outside the probe
+    are masked out in these computations so that empty space isn't
+    counted towards the correlations.
+    """
+    z_reg = motion_est.correct_s(t, z)
+
+    # throw away spikes which are way off in space before computing the metric
+    max_disp = np.abs(motion_est.displacement).max()
+    z_reg_low = geom[:, 1].min() - margin - max_disp
+    z_reg_high = geom[:, 1].max() + margin + max_disp
+    inlying = z_reg == np.clip(z_reg, z_reg_low, z_reg_high)
+    a = a[inlying]
+    z = z[inlying]
+    z_reg = z_reg[inlying]
+    t = t[inlying]
+
+    # get registered raster map
+    raster, dbe, tbe = spike_raster(a, z_reg, t)
+
+    # mask out raster regions which are outside the drifting probe
+    dbc = 0.5 * (dbe[1:] + dbe[:-1])
+    tbc = 0.5 * (tbe[1:] + tbe[:-1])
+    for t in range(len(tbe) - 1):
+        glo = motion_est.correct_s(t, geom[:, 1].min() - margin)
+        ghi = motion_est.correct_s(t, geom[:, 1].max() + margin)
+        outside = dbc != np.clip(dbc, glo, ghi)
+        raster[outside, t] = np.nan
+
+    # compute a masked template and masked correlations to it
+    with warnings.catch_warnings():
+        warnings.filterwarnings(
+            action="ignore", category=RuntimeWarning, message="Mean of empty slice"
+        )
+        nan_template = np.nanmean(raster, axis=1)
+        temp = (nan_template - np.nanmean(nan_template)) / np.nanstd(nan_template)
+        r = (raster - np.nanmean(raster, 0)[None]) / np.nanstd(raster, 0)[None]
+        nan_corr_trace = np.nanmean(temp[:, None] * r, 0)
+
+    return dict(
+        raster=raster,
+        spatial_bin_edges_um=dbe,
+        spatial_bin_centers_um=dbc,
+        temporal_bin_edges_s=tbe,
+        temporal_bin_centers_s=tbc,
+        masked_template_correlation=nan_corr_trace,
+    )
+
+
+def sliding_mean_and_stddev_interval(
+    axis, xs, ys, n_neighbors=30, linewidth=1, color="k", ci_alpha=0.25
+):
+    """A helper for plotting moving mean+stddev ci"""
+    _1 = np.ones(2 * n_neighbors + 1)
+    _ys = np.nan_to_num(ys)
+    sliding_sum = correlate1d(_ys, _1, mode="constant")
+    sliding_N = correlate1d(np.isfinite(ys).astype(float), _1, mode="constant")
+    sliding_mean = sliding_sum / sliding_N
+    sliding_sumsq = correlate1d(_ys**2, _1, mode="constant")
+    sliding_std = np.sqrt(sliding_sumsq / sliding_N - sliding_mean**2)
+    if ci_alpha:
+        ci = axis.fill_between(
+            xs,
+            sliding_mean - sliding_std,
+            sliding_mean + sliding_std,
+            color=color,
+            alpha=ci_alpha,
+            edgecolor=None,
+        )
+    line = axis.plot(xs, sliding_mean, color=color, linewidth=linewidth)
+    return line, ci, sliding_mean, sliding_std, sliding_N
+
+
+def plot_masked_template_correlation(
+    axis,
+    a,
+    z,
+    t,
+    motion_est,
+    geom,
+    margin=0,
+    n_neighbors=30,
+    linewidth=1,
+    color="k",
+    ci_alpha=0.25,
+):
+    corr_data = masked_template_correlation(a, z, t, motion_est, geom, margin=margin)
+    (
+        line,
+        ci,
+        corr_data["sliding_mean"],
+        corr_data["sliding_std"],
+        corr_data["sliding_N"],
+    ) = sliding_mean_and_stddev_interval(
+        axis,
+        corr_data["temporal_bin_centers_s"],
+        corr_data["masked_template_correlation"],
+        n_neighbors=n_neighbors,
+        linewidth=linewidth,
+        color=color,
+        ci_alpha=ci_alpha,
+    )
+    return corr_data, line, ci
+
+
 # -- bins / windows / rasters
+
 
 def get_bins(x, bin_h):
     return np.arange(
@@ -787,9 +890,7 @@ def si_get_windows(
 
     """
     if spatial_bin_centers is None:
-        spatial_bin_centers = 0.5 * (
-            spatial_bin_edges[1:] + spatial_bin_edges[:-1]
-        )
+        spatial_bin_centers = 0.5 * (spatial_bin_edges[1:] + spatial_bin_edges[:-1])
     n = spatial_bin_centers.size
 
     if rigid:
@@ -810,13 +911,10 @@ def si_get_windows(
         for win_center in non_rigid_window_centers:
             if win_shape == "gaussian":
                 win = np.exp(
-                    -((spatial_bin_centers - win_center) ** 2)
-                    / (2 * win_sigma_um**2)
+                    -((spatial_bin_centers - win_center) ** 2) / (2 * win_sigma_um**2)
                 )
             elif win_shape == "rect":
-                win = np.abs(spatial_bin_centers - win_center) < (
-                    win_sigma_um / 2.0
-                )
+                win = np.abs(spatial_bin_centers - win_center) < (win_sigma_um / 2.0)
                 win = win.astype("float64")
             elif win_shape == "triangle":
                 center_dist = np.abs(spatial_bin_centers - win_center)
