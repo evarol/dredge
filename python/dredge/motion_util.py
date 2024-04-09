@@ -523,7 +523,7 @@ def plot_me_traces(
     t_offset = times[0] if zero_times else 0
     if t_start is not None:
         times = times[times >= t_start]
-    if t_start is not None:
+    if t_end is not None:
         times = times[times <= t_end]
 
     lines = []
