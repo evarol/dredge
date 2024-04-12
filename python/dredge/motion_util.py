@@ -13,6 +13,7 @@ The main registration APIs in dredge_ap and drege_lfp use these helpers.
 import numpy as np
 from scipy.interpolate import RegularGridInterpolator, interp1d
 from scipy.ndimage import gaussian_filter1d, correlate1d
+from scipy import ndimage
 import warnings
 
 # -- motion estimate helper classes
@@ -66,19 +67,19 @@ class MotionEstimate:
 
         ! This must be implemented by subclasses!
 
-                        Arguments
-                        ---------
-                        t_s, depth_um : floats or np.arrays
-                            These should be numbers or arrays of the same shape corresponding to times
-                            (in seconds) and depths (in microns)
-                        grid : boolean, optional
-                            If true, treat t_s and depth_um as x/y coordinates of a 2d rectangular grid.
-                            Then, if t_s and depth_um have `n` and `m` elements, this computes displacements
-                            on the `n x m` grid.
+                                Arguments
+                                ---------
+                                t_s, depth_um : floats or np.arrays
+                                    These should be numbers or arrays of the same shape corresponding to times
+                                    (in seconds) and depths (in microns)
+                                grid : boolean, optional
+                                    If true, treat t_s and depth_um as x/y coordinates of a 2d rectangular grid.
+                                    Then, if t_s and depth_um have `n` and `m` elements, this computes displacements
+                                    on the `n x m` grid.
 
-                        Returns
-                        -------
-                        An array of displacements in microns with the same shape as depth_um (when grid=False).
+                                Returns
+                                -------
+                                An array of displacements in microns with the same shape as depth_um (when grid=False).
         """
         raise NotImplementedError
 
@@ -481,9 +482,32 @@ def show_raster(raster, spatial_bin_edges_um, time_bin_edges_s, ax, **imshow_kwa
     )
 
 
-def show_spike_raster(amps, depths, times, ax, **imshow_kwargs):
+def show_spike_raster(amps, depths, times, ax, raster_kwargs=None, **imshow_kwargs):
     """Display a spike activity raster as created with `spike_raster` below"""
-    raster, spatial_bin_edges_um, time_bin_edges_s = spike_raster(amps, depths, times)
+    if raster_kwargs is None:
+        raster_kwargs = {}
+    raster, spatial_bin_edges_um, time_bin_edges_s = spike_raster(
+        amps, depths, times, **raster_kwargs
+    )[:3]
+    extent = (*time_bin_edges_s[[0, -1]], *spatial_bin_edges_um[[0, -1]])
+    return extent, ax.imshow(
+        raster,
+        extent=extent,
+        origin="lower",
+        **imshow_kwargs,
+    )
+
+
+def show_registered_raster(
+    me, amps, depths, times, ax, raster_kwargs=None, **imshow_kwargs
+):
+    """Plot a registered raster for the MotionEstimate me."""
+    if raster_kwargs is None:
+        raster_kwargs = {}
+    depths_reg = me.correct_s(times, depths)
+    raster, spatial_bin_edges_um, time_bin_edges_s = spike_raster(
+        amps, depths_reg, times, **raster_kwargs
+    )[:3]
     return ax.imshow(
         raster,
         extent=(*time_bin_edges_s[[0, -1]], *spatial_bin_edges_um[[0, -1]]),
@@ -534,20 +558,6 @@ def plot_me_traces(
         )
         lines.extend(l)
     return lines
-
-
-def show_registered_raster(me, amps, depths, times, ax, **imshow_kwargs):
-    """Plot a registered raster for the MotionEstimate me."""
-    depths_reg = me.correct_s(times, depths)
-    raster, spatial_bin_edges_um, time_bin_edges_s = spike_raster(
-        amps, depths_reg, times
-    )
-    return ax.imshow(
-        raster,
-        extent=(*time_bin_edges_s[[0, -1]], *spatial_bin_edges_um[[0, -1]]),
-        origin="lower",
-        **imshow_kwargs,
-    )
 
 
 def show_displacement_heatmap(me, ax, spatial_bin_centers_um=None, **imshow_kwargs):
@@ -952,6 +962,9 @@ def spike_raster(
     gaussian_smoothing_sigma_s=0,
     avg_in_bin=True,
     post_transform=None,
+    return_counts=False,
+    count_bins=31,
+    count_bin_min=5,
 ):
     """Create an image representation of spike activity
 
@@ -1001,65 +1014,67 @@ def spike_raster(
     else:
         weights = amp_scale_fn(amps)
 
-    if gaussian_smoothing_sigma_um:
-        spatial_bin_edges_um_1um = np.arange(
-            spatial_bin_edges_um[0],
-            spatial_bin_edges_um[-1] + 1,
-            1,
-        )
-        spatial_bin_centers_um_1um = 0.5 * (
-            spatial_bin_edges_um_1um[1:] + spatial_bin_edges_um_1um[:-1]
-        )
-        r_up = np.histogram2d(
-            depths,
-            times,
-            bins=(spatial_bin_edges_um_1um, time_bin_edges_s),
-            weights=weights,
-        )[0]
-        if avg_in_bin:
-            r_up /= np.maximum(
-                1,
-                np.histogram2d(
-                    depths,
-                    times,
-                    bins=(spatial_bin_edges_um_1um, time_bin_edges_s),
-                )[0],
-            )
-
-        r_up = gaussian_filter1d(r_up, gaussian_smoothing_sigma_um, axis=0)
-        r = np.empty(
-            (spatial_bin_edges_um.size - 1, time_bin_edges_s.size - 1),
-            dtype=r_up.dtype,
-        )
-        for i, (bin_start, bin_end) in enumerate(
-            zip(spatial_bin_edges_um, spatial_bin_edges_um[1:])
-        ):
-            in_bin = np.flatnonzero(
-                (bin_start <= spatial_bin_centers_um_1um)
-                & (bin_end > spatial_bin_centers_um_1um)
-            )
-            r[i] = r_up[in_bin].sum(0) / (in_bin.size if avg_in_bin else 1)
-    else:
-        r = np.histogram2d(
+    if return_counts:
+        counts = np.histogram2d(
             depths,
             times,
             bins=(spatial_bin_edges_um, time_bin_edges_s),
-            weights=weights,
         )[0]
-        if avg_in_bin:
-            r /= np.maximum(
-                1,
-                np.histogram2d(
-                    depths,
-                    times,
-                    bins=(spatial_bin_edges_um, time_bin_edges_s),
-                )[0],
+        counts = counts >= count_bin_min
+        structure = np.zeros((count_bins, 1), dtype=counts.dtype)
+        structure[: count_bins // 2 + 1] = 1
+        countsup = ndimage.binary_dilation(counts, structure=structure)
+        countsdown = ndimage.binary_dilation(counts, structure=structure[::-1])
+        countsmiddle = ndimage.binary_dilation(counts, structure=np.ones((count_bins // 2 + 1, 1), dtype=counts.dtype))
+        counts = np.logical_and(countsup, countsdown)
+        counts = np.logical_and(counts, countsmiddle)
+    else:
+        counts = 1
+
+    r = np.histogram2d(
+        depths,
+        times,
+        bins=(spatial_bin_edges_um, time_bin_edges_s),
+        weights=weights,
+    )[0]
+    if avg_in_bin:
+        r /= np.maximum(
+            1,
+            np.histogram2d(
+                depths,
+                times,
+                bins=(spatial_bin_edges_um, time_bin_edges_s),
+            )[0],
+        )
+
+    if gaussian_smoothing_sigma_um:
+        r = gaussian_filter1d(
+            r * counts, gaussian_smoothing_sigma_um / bin_um, axis=0, mode="constant"
+        )
+        r[counts == 0] = 0
+        if return_counts:
+            w_up = gaussian_filter1d(
+                counts, gaussian_smoothing_sigma_um / bin_um, axis=0, mode="constant"
             )
+            w_up[w_up == 0] = 1
+            r /= w_up
 
     if post_transform is not None:
         r = post_transform(r)
 
     if gaussian_smoothing_sigma_s:
-        r = gaussian_filter1d(r, gaussian_smoothing_sigma_s / bin_s, axis=1)
+        r = gaussian_filter1d(
+            r * counts, gaussian_smoothing_sigma_s / bin_s, axis=1, mode="constant"
+        )
+        r[counts == 0] = 0
+        if return_counts:
+            w = gaussian_filter1d(
+                counts, gaussian_smoothing_sigma_s / bin_s, axis=1, mode="constant"
+            )
+            w[w == 0] = 1
+            r /= w
+
+    if return_counts:
+        return r, spatial_bin_edges_um, time_bin_edges_s, counts
 
     return r, spatial_bin_edges_um, time_bin_edges_s
