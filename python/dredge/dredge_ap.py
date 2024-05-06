@@ -23,8 +23,8 @@ def register(
     # raster arguments
     amp_scale_fn=None,
     post_transform=np.log1p,
-    gaussian_smoothing_sigma_um=1,
-    gaussian_smoothing_sigma_s=1,
+    gaussian_smoothing_sigma_um=None,
+    gaussian_smoothing_sigma_s=None,
     avg_in_bin=False,
     # weights arguments
     mincorr=0.1,
