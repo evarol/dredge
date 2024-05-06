@@ -903,6 +903,12 @@ def spike_raster(
     else:
         weights = amp_scale_fn(amps)
 
+    if gaussian_smoothing_sigma_um is None:
+        gaussian_smoothing_sigma_um = bin_um
+
+    if gaussian_smoothing_sigma_s is None:
+        gaussian_smoothing_sigma_s = bin_s
+
     if gaussian_smoothing_sigma_um:
         spatial_bin_edges_um_1um = np.arange(
             spatial_bin_edges_um[0],
