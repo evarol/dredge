@@ -254,18 +254,17 @@ def get_weights(
     Ss,
     Sigma0inv_t,
     windows,
-    amps,
-    depths,
-    times,
+    raster,
+    dbe,
+    tbe,
+    raster_kw,
     weights_threshold_low=0.0,
     weights_threshold_high=np.inf,
-    raster_kw=None,
     pbar=False,
 ):
     """Compute per-time-bin weighting for each nonrigid window"""
     # determine window-weighted raster "heat" in each nonrigid window
     # as a function of time
-    r, dbe, tbe = spike_raster(amps, depths, times, **raster_kw)
     assert windows.shape[1] == dbe.size - 1
     weights = []
     p_inds = []
@@ -273,7 +272,7 @@ def get_weights(
         ilow, ihigh = np.flatnonzero(windows[b])[[0, -1]]
         ihigh += 1
         window_sliced = windows[b, ilow:ihigh]
-        weights.append(window_sliced @ r[ilow:ihigh])
+        weights.append(window_sliced @ raster[ilow:ihigh])
     weights_orig = np.array(weights)
 
     scale_fn = raster_kw["post_transform"] or raster_kw["amp_scale_fn"]
@@ -355,10 +354,11 @@ def threshold_correlation_matrix(
 def weight_correlation_matrix(
     Ds,
     Cs,
-    amps,
-    depths_um,
-    times_s,
     windows,
+    raster,
+    depth_bin_edges,
+    time_bin_edges,
+    raster_kw,
     mincorr=0.0,
     mincorr_percentile=None,
     mincorr_percentile_nneighbs=20,
@@ -368,14 +368,11 @@ def weight_correlation_matrix(
     do_window_weights=True,
     weights_threshold_low=0.0,
     weights_threshold_high=np.inf,
-    raster_kw=None,
     pbar=True,
     in_place=False,
 ):
     """Transform the correlation matrix into the weights used in optimization."""
-    assert raster_kw is not None
     extra = {}
-    bin_s = raster_kw["bin_s"]
 
     Ds = np.asarray(Ds)
     Cs = np.asarray(Cs)
@@ -393,7 +390,7 @@ def weight_correlation_matrix(
         mincorr_percentile=mincorr_percentile,
         mincorr_percentile_nneighbs=mincorr_percentile_nneighbs,
         max_dt_s=max_dt_s,
-        bin_s=bin_s,
+        bin_s=time_bin_edges[1] - time_bin_edges[0],
         T=T,
         in_place=in_place,
     )
@@ -410,12 +407,12 @@ def weight_correlation_matrix(
         Ss,
         L_t,
         windows,
-        amps,
-        depths_um,
-        times_s,
+        raster,
+        depth_bin_edges,
+        time_bin_edges,
+        raster_kw,
         weights_threshold_low=weights_threshold_low,
         weights_threshold_high=weights_threshold_high,
-        raster_kw=raster_kw,
         pbar=pbar,
     )
     extra["weights_orig"] = weights_orig
@@ -458,6 +455,7 @@ def xcorr_windows(
     pbar=True,
     centered=True,
     normalized=True,
+    masks=None,
     device=None,
 ):
     """Main computational function
@@ -490,6 +488,8 @@ def xcorr_windows(
     else:
         T1 = T0
         raster_b_ = raster_a_
+    if masks is not None:
+        masks = torch.as_tensor(masks, dtype=torch.float, device=device)
 
     # estimate each window's displacement
     Ds = np.zeros((B, T0, T1), dtype=np.float32)
@@ -516,6 +516,8 @@ def xcorr_windows(
             raster_a_[slices[b]],
             raster_b_[b_low:b_high],
             weights=window[slices[b]],
+            masks=None if masks is None else masks[slices[b]],
+            xmasks=None if masks is None else masks[b_low:b_high],
             disp=padding,
             possible_displacement=poss_disp,
             device=device,
@@ -531,6 +533,8 @@ def calc_corr_decent_pair(
     raster_a,
     raster_b,
     weights=None,
+    masks=None,
+    xmasks=None,
     disp=None,
     batch_size=512,
     normalized=True,
@@ -600,10 +604,14 @@ def calc_corr_decent_pair(
             )
             if max_dt_bins and dt_bins > max_dt_bins:
                 continue
+            weights_ = weights
+            if masks is not None:
+                weights_ = masks.T[i : i + batch_size] * weights
             corr = normxcorr1d(
                 raster_a[i : i + batch_size],
                 raster_b[j : j + batch_size],
-                weights=weights,
+                weights=weights_,
+                xmasks=None if xmasks is None else xmasks.T[j : j + batch_size],
                 padding=disp,
                 normalized=normalized,
                 centered=centered,
@@ -620,6 +628,7 @@ def normxcorr1d(
     template,
     x,
     weights=None,
+    xmasks=None,
     centered=True,
     normalized=True,
     padding="same",
@@ -680,34 +689,50 @@ def normxcorr1d(
 
     # generalize over weighted / unweighted case
     device_kw = {} if conv_engine == "numpy" else dict(device=x.device)
-    onesx = npx.ones((1, 1, lengthx), dtype=x.dtype, **device_kw)
+    if xmasks is None:
+        onesx = npx.ones((1, 1, lengthx), dtype=x.dtype, **device_kw)
+        wx = x[:, None, :]
+    else:
+        assert xmasks.shape == x.shape
+        onesx = xmasks[:, None, :]
+        wx = x[:, None, :] * onesx
     no_weights = weights is None
     if no_weights:
         weights = npx.ones((1, 1, lengtht), dtype=x.dtype, **device_kw)
         wt = template[:, None, :]
     else:
-        assert weights.shape == (lengtht,)
-        weights = weights[None, None]
+        if weights.shape == (lengtht,):
+            weights = weights[None, None]
+        elif weights.shape == (num_templates, lengtht):
+            weights = weights[:, None, :]
+        else:
+            assert False
         wt = template[:, None, :] * weights
+    x = x[:, None, :]
+    template = template[:, None, :]
 
     # conv1d valid rule:
     # (B,1,L),(O,1,L)->(B,O,L)
+    # below, we always put x on the LHS, templates on the RHS, so this reads
+    # (num_inputs, 1, lengthx), (num_templates, 1, lengtht) -> (num_inputs, num_templates, length_out)
 
     # compute expectations
     # how many points in each window? seems necessary to normalize
     # for numerical stability.
-    Nx = conv1d(onesx, weights, padding=padding)
+    Nx = conv1d(onesx, weights, padding=padding)  # 1,nt,l
+    empty = Nx == 0
+    Nx[empty] = 1
     if centered:
-        Et = conv1d(onesx, wt, padding=padding)
+        Et = conv1d(onesx, wt, padding=padding)  # 1,nt,l
         Et /= Nx
-        Ex = conv1d(x[:, None, :], weights, padding=padding)
+        Ex = conv1d(wx, weights, padding=padding)  # nx,nt,l
         Ex /= Nx
 
     # compute (weighted) covariance
     # important: the formula E[XY] - EX EY is well-suited here,
     # because the means are naturally subtracted correctly
     # patch-wise. you couldn't pre-subtract them!
-    cov = conv1d(x[:, None, :], wt, padding=padding)
+    cov = conv1d(wx, wt, padding=padding)
     cov /= Nx
     if centered:
         cov -= Ex * Et
@@ -715,22 +740,23 @@ def normxcorr1d(
     # compute variances for denominator, using var X = E[X^2] - (EX)^2
     if normalized:
         var_template = conv1d(
-            onesx, wt * template[:, None, :], padding=padding
+            onesx, wt * template, padding=padding
         )
         var_template /= Nx
-        var_x = conv1d(npx.square(x)[:, None, :], weights, padding=padding)
+        var_x = conv1d(wx * x, weights, padding=padding)
         var_x /= Nx
         if centered:
             var_template -= npx.square(Et)
             var_x -= npx.square(Ex)
 
         # fill in zeros to avoid problems when dividing
-        var_template[var_template == 0] = 1
-        var_x[var_x == 0] = 1
+        var_template[var_template <= 0] = 1
+        var_x[var_x <= 0] = 1
 
     # now find the final normxcorr
     corr = cov  # renaming for clarity
     if normalized:
+        corr[torch.broadcast_to(empty, corr.shape)] = 0
         corr /= npx.sqrt(var_x)
         corr /= npx.sqrt(var_template)
 
