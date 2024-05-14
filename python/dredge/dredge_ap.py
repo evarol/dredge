@@ -136,7 +136,7 @@ def register(
         zero_threshold=1e-5,
         rigid=rigid,
     )
-    if save_full:
+    if save_full and count_masked_correlation:
         extra["counts"] = counts
 
     # cross-correlate to get D and C
