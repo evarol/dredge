@@ -309,6 +309,7 @@ def threshold_correlation_matrix(
     max_dt_s=0,
     in_place=False,
     bin_s=1,
+    t_offset_bins=None,
     T=None,
     soft=True,
 ):
@@ -341,12 +342,12 @@ def threshold_correlation_matrix(
         and T is not None
         and max_dt_s < T
     ):
-        mask = la.toeplitz(
-            np.r_[
-                np.ones(int(max_dt_s // bin_s), dtype=Ss.dtype),
-                np.zeros(T - int(max_dt_s // bin_s), dtype=Ss.dtype),
-            ]
-        )
+        tt0 = bin_s * np.arange(T)
+        tt1 = tt0
+        if t_offset_bins:
+            tt1 = tt0 + t_offset_bins
+        dt = tt1[:, None] - tt0[None, :]
+        mask = (np.abs(dt) <= max_dt_s).astype(Ss.dtype)
         Ss *= mask[None]
     return Ss, mincorr
 
