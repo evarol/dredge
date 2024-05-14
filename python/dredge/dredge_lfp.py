@@ -16,6 +16,7 @@ def register_online_lfp(
     win_step_um=800,
     win_scale_um=850,
     win_margin_um=None,
+    max_dt_s=None,
     # weighting arguments
     mincorr=0.8,
     mincorr_percentile=None,
@@ -95,7 +96,8 @@ def register_online_lfp(
         in_place=True,
         soft=soft,
         # max_dt_s=weights_kw["max_dt_s"],  # max_dt not implemented for lfp at this point
-        # bin_s=1 / fs,  # only relevant for max_dt_s
+        max_dt_s=max_dt_s,
+        bin_s=1 / fs,  # only relevant for max_dt_s
     )
 
     # get windows
@@ -152,6 +154,7 @@ def register_online_lfp(
         traces1 = lfp_recording.get_traces(start_frame=t1, end_frame=t2)
 
         # cross-correlations between prev/cur chunks
+        # these are T1, T0 shaped
         Ds10, Cs10, _ = xcorr_windows(
             traces1.T,
             windows,
@@ -172,7 +175,7 @@ def register_online_lfp(
             **threshold_kw,
         )
         Ss10, _ = threshold_correlation_matrix(
-            Cs10, mincorr=mincorr1, **threshold_kw
+            Cs10, mincorr=mincorr1, t_offset_bins=T_chunk, **threshold_kw
         )
         extra["mincorrs"].append(mincorr1)
 
