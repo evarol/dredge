@@ -236,8 +236,8 @@ class NonrigidMotionEstimate(MotionEstimate):
         if grid:
             depth_um, t_s = np.meshgrid(depth_um, t_s, indexing="ij")
         points = np.c_[
-            np.clip(depth_um, self.d_low, self.d_high).ravel(),
-            np.clip(t_s, self.t_low, self.t_high).ravel(),
+            depth_um.clip(self.d_low, self.d_high).ravel(),
+            t_s.clip(self.t_low, self.t_high).ravel(),
         ]
         return self.lerp(points).reshape(np.asarray(t_s).shape)
 
@@ -397,13 +397,25 @@ def get_interpolated_recording(motion_est, recording, border_mode="remove_channe
     return rec_interpolated
 
 
-def speed_limit_filter(me, speed_limit_um_per_s=5000.0):
+def speed_limit_filter(me, band_width=101, band_limit=None, speed_limit_um_per_s=5000.0, acceleration_limit=None, edge_order=1):
     """Interpolate away outrageously huge jumps."""
     displacement = np.atleast_2d(me.displacement)
-    speed = np.abs(np.gradient(displacement, me.time_bin_centers_s, axis=1))
-    valid = speed <= speed_limit_um_per_s
-    valid[[0, -1]] = True
-    print(f"{valid.mean()=}")
+    velocity = np.gradient(displacement, me.time_bin_centers_s, axis=1, edge_order=edge_order)
+    speed = np.abs(velocity)
+    if speed_limit_um_per_s:
+        valid = speed <= speed_limit_um_per_s
+    else:
+        valid = np.ones(speed.shape, dtype=bool)
+    if acceleration_limit:
+        acceleration = np.abs(
+            np.gradient(velocity, me.time_bin_centers_s,  axis=1, edge_order=edge_order)
+        )
+        valid &= acceleration <= acceleration_limit
+    if band_limit:
+        band_signal = ndimage.median_filter(displacement, size=band_width, axes=(1,))
+        band_distance = np.abs(displacement - band_signal)
+        valid &= band_distance <= band_limit
+    valid[..., [0, -1]] = True
     if valid.all():
         return me
     valid_lerp = [
@@ -609,6 +621,8 @@ def show_lfp_image(
         traces = lfp_recording.get_traces(
             0, start_sample, end_sample, return_scaled=volts
         )
+        if volts:
+            traces = traces * 1000
 
     if seconds:
         times = lfp_recording.get_times(0)[start_sample:end_sample]
@@ -630,8 +644,9 @@ def show_lfp_image(
         extent_y = extent_y[1], extent_y[0]
 
     extent = [*extent_t, *extent_y]
+    vm = np.abs(traces).max()
     im = ax.imshow(
-        traces.T, extent=extent, aspect=aspect, origin=origin, **imshow_kwargs
+        traces.T, extent=extent, aspect=aspect, origin=origin, vmin=-vm, vmax=vm, **imshow_kwargs
     )
     ax.set_xlabel(xlabel)
     ax.set_ylabel(ylabel)
@@ -761,15 +776,19 @@ def plot_masked_template_correlation(
     a,
     z,
     t,
-    motion_est,
-    geom,
+    motion_est=None,
+    geom=None,
     margin=0,
     n_neighbors=30,
     linewidth=1,
     color="k",
     ci_alpha=0.25,
+    precomputed=None,
 ):
-    corr_data = masked_template_correlation(a, z, t, motion_est, geom, margin=margin)
+    if precomputed is not None:
+        corr_data = precomputed
+    else:
+        corr_data = masked_template_correlation(a, z, t, motion_est, geom, margin=margin)
     (
         line,
         ci,
