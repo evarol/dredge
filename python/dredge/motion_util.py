@@ -10,11 +10,13 @@ This library has 3 sections:
 
 The main registration APIs in dredge_ap and drege_lfp use these helpers.
 """
-import numpy as np
-from scipy.interpolate import RegularGridInterpolator, interp1d
-from scipy.ndimage import gaussian_filter1d, correlate1d
-from scipy import ndimage
+
 import warnings
+
+import numpy as np
+from scipy import ndimage
+from scipy.interpolate import RegularGridInterpolator, interp1d
+from scipy.ndimage import correlate1d, gaussian_filter1d
 
 # -- motion estimate helper classes
 
@@ -65,21 +67,19 @@ class MotionEstimate:
     def disp_at_s(self, t_s, depth_um=None, grid=False):
         """Get the displacement at time t_s and depth depth_um
 
-        ! This must be implemented by subclasses!
+        Arguments
+        ---------
+        t_s, depth_um : floats or np.arrays
+            These should be numbers or arrays of the same shape corresponding to times
+            (in seconds) and depths (in microns)
+        grid : boolean, optional
+            If true, treat t_s and depth_um as x/y coordinates of a 2d rectangular grid.
+            Then, if t_s and depth_um have `n` and `m` elements, this computes displacements
+            on the `n x m` grid.
 
-                                Arguments
-                                ---------
-                                t_s, depth_um : floats or np.arrays
-                                    These should be numbers or arrays of the same shape corresponding to times
-                                    (in seconds) and depths (in microns)
-                                grid : boolean, optional
-                                    If true, treat t_s and depth_um as x/y coordinates of a 2d rectangular grid.
-                                    Then, if t_s and depth_um have `n` and `m` elements, this computes displacements
-                                    on the `n x m` grid.
-
-                                Returns
-                                -------
-                                An array of displacements in microns with the same shape as depth_um (when grid=False).
+        Returns
+        -------
+        An array of displacements in microns with the same shape as depth_um (when grid=False).
         """
         raise NotImplementedError
 
@@ -155,7 +155,9 @@ class RigidMotionEstimate(MotionEstimate):
         -------
         An array of displacements in microns with the same shape as t_s (when grid=False).
         """
-        if depth_um is not None and np.asarray(depth_um).shape != np.asarray(t_s).shape:
+        depth_um = np.asarray(depth_um)
+        t_s = np.asarray(t_s)
+        if depth_um is not None and depth_um.shape != t_s.shape:
             assert grid
         disp = self.lerp(np.asarray(t_s))
         if grid:
@@ -231,7 +233,9 @@ class NonrigidMotionEstimate(MotionEstimate):
         -------
         An array of displacements in microns with the same shape as t_s (when grid=False).
         """
-        if np.asarray(depth_um).shape != np.asarray(t_s).shape:
+        depth_um = np.asarray(depth_um)
+        t_s = np.asarray(t_s)
+        if depth_um.shape != t_s.shape:
             assert grid
         if grid:
             depth_um, t_s = np.meshgrid(depth_um, t_s, indexing="ij")
@@ -286,7 +290,9 @@ def get_motion_estimate(
     This would be the suggested way to instantiate RigidMotionEstimates
     and NonrigidMotionEstimates, since it handles both cases equally.
 
-    Returns: an instance of a MotionEstimate subclass.
+    Returns
+    -------
+    An instance of a MotionEstimate subclass.
     """
     displacement = np.asarray(displacement).squeeze()
     assert displacement.ndim <= 2
@@ -339,6 +345,9 @@ def get_interpolated_recording(motion_est, recording, border_mode="remove_channe
     This handles internally translation between the sample times of recording
     and motion_est. So, you can use this function with a motion_est computed from 250Hz
     LFP to correct 250Hz LFP or 2500Hz LFP or 30kHz AP equally.
+
+    SpikeInterface will handle this internally soon, including improved handling of time
+    info to make this kind of thing unnecessary.
 
     Arguments
     ---------
@@ -397,10 +406,19 @@ def get_interpolated_recording(motion_est, recording, border_mode="remove_channe
     return rec_interpolated
 
 
-def speed_limit_filter(me, band_width=101, band_limit=None, speed_limit_um_per_s=5000.0, acceleration_limit=None, edge_order=1):
+def speed_limit_filter(
+    me,
+    band_width=101,
+    band_limit=None,
+    speed_limit_um_per_s=5000.0,
+    acceleration_limit=None,
+    edge_order=1,
+):
     """Interpolate away outrageously huge jumps."""
     displacement = np.atleast_2d(me.displacement)
-    velocity = np.gradient(displacement, me.time_bin_centers_s, axis=1, edge_order=edge_order)
+    velocity = np.gradient(
+        displacement, me.time_bin_centers_s, axis=1, edge_order=edge_order
+    )
     speed = np.abs(velocity)
     if speed_limit_um_per_s:
         valid = speed <= speed_limit_um_per_s
@@ -408,7 +426,7 @@ def speed_limit_filter(me, band_width=101, band_limit=None, speed_limit_um_per_s
         valid = np.ones(speed.shape, dtype=bool)
     if acceleration_limit:
         acceleration = np.abs(
-            np.gradient(velocity, me.time_bin_centers_s,  axis=1, edge_order=edge_order)
+            np.gradient(velocity, me.time_bin_centers_s, axis=1, edge_order=edge_order)
         )
         valid &= acceleration <= acceleration_limit
     if band_limit:
@@ -608,6 +626,7 @@ def show_lfp_image(
     origin="lower",
     **imshow_kwargs,
 ):
+    """Display a chunk of LFP traces as an image."""
     if traces is None and batched_mode:
         traces = np.concatenate(
             [
@@ -646,7 +665,13 @@ def show_lfp_image(
     extent = [*extent_t, *extent_y]
     vm = np.abs(traces).max()
     im = ax.imshow(
-        traces.T, extent=extent, aspect=aspect, origin=origin, vmin=-vm, vmax=vm, **imshow_kwargs
+        traces.T,
+        extent=extent,
+        aspect=aspect,
+        origin=origin,
+        vmin=-vm,
+        vmax=vm,
+        **imshow_kwargs,
     )
     ax.set_xlabel(xlabel)
     ax.set_ylabel(ylabel)
@@ -664,6 +689,7 @@ def show_lfp_me_traces(
     depths_um=None,
     **plot_kwargs,
 ):
+    """Display a motion estimate in a chunk of time. Use with `show_lfp_image`."""
     times_s = me.time_bin_centers_s[start_sample:end_sample]
     times = times_s
     if not seconds:
@@ -773,9 +799,9 @@ def sliding_mean_and_stddev_interval(
 
 def plot_masked_template_correlation(
     axis,
-    a,
-    z,
-    t,
+    amps,
+    depths,
+    times,
     motion_est=None,
     geom=None,
     margin=0,
@@ -785,10 +811,13 @@ def plot_masked_template_correlation(
     ci_alpha=0.25,
     precomputed=None,
 ):
+    """Plot the masked template correlation metric over time using a sliding mean and confidence interval."""
     if precomputed is not None:
         corr_data = precomputed
     else:
-        corr_data = masked_template_correlation(a, z, t, motion_est, geom, margin=margin)
+        corr_data = masked_template_correlation(
+            amps, depths, times, motion_est, geom, margin=margin
+        )
     (
         line,
         ci,
@@ -811,6 +840,7 @@ def plot_masked_template_correlation(
 
 
 def get_bins(x, bin_h):
+    """Helper for dividing a domain into evenly spaced bins."""
     return np.arange(
         np.floor(x.min()),
         np.ceil(x.max()) + bin_h,
@@ -829,7 +859,10 @@ def get_windows(
     zero_threshold=1e-5,
     rigid=False,
 ):
-    """Helper wrapper around si_get_windows below."""
+    """Compute the nonrigid windows
+
+    Helper wrapper around si_get_windows below.
+    """
     if win_shape == "gaussian":
         win_sigma_um = win_sigma_um / 2
     if margin_um is None:
@@ -1044,7 +1077,9 @@ def spike_raster(
         structure[: count_bins // 2 + 1] = 1
         countsup = ndimage.binary_dilation(counts, structure=structure)
         countsdown = ndimage.binary_dilation(counts, structure=structure[::-1])
-        countsmiddle = ndimage.binary_dilation(counts, structure=np.ones((count_bins // 2 + 1, 1), dtype=counts.dtype))
+        countsmiddle = ndimage.binary_dilation(
+            counts, structure=np.ones((count_bins // 2 + 1, 1), dtype=counts.dtype)
+        )
         counts = np.logical_and(countsup, countsdown)
         counts = np.logical_and(counts, countsmiddle)
     else:

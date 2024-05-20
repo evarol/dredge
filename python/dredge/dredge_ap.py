@@ -5,7 +5,6 @@ import numpy as np
 from .dredgelib import (DEFAULT_EPS, DEFAULT_LAMBDA_T, thomas_solve,
                         weight_correlation_matrix, xcorr_windows)
 from .motion_util import get_motion_estimate, get_windows, spike_raster
-from scipy import ndimage
 
 
 def register(
@@ -16,11 +15,19 @@ def register(
     bin_um=1.0,
     bin_s=1.0,
     max_disp_um=None,
+    max_dt_s=1000,
+    mincorr=0.1,
     # nonrigid window construction arguments
     win_shape="gaussian",
     win_step_um=400,
     win_scale_um=450,
     win_margin_um=None,
+    # weights arguments
+    do_window_weights=True,
+    weights_threshold_low=0.2,
+    weights_threshold_high=0.2,
+    mincorr_percentile=None,
+    mincorr_percentile_nneighbs=None,
     # raster arguments
     amp_scale_fn=None,
     post_transform=np.log1p,
@@ -30,14 +37,6 @@ def register(
     count_masked_correlation=False,
     count_bins=401,
     count_bin_min=2,
-    # weights arguments
-    mincorr=0.1,
-    max_dt_s=1000,
-    do_window_weights=True,
-    weights_threshold_low=0.2,
-    weights_threshold_high=0.2,
-    mincorr_percentile=None,
-    mincorr_percentile_nneighbs=None,
     # low-level keyword args
     thomas_kw=None,
     xcorr_kw=None,
@@ -49,32 +48,57 @@ def register(
 ):
     """Estimate motion from spikes
 
+    Spikes located at depths specified in `depths` along the probe, occurring at times in
+    seconds specified in `times` with amplitudes `amps` are used to create a 2d image of
+    the spiking activity. This image is cross-correlated with itself to produce a displacement
+    matrix (or several, one for each nonrigid window). This matrix is used to solve for a
+    motion estimate.
+
     Arguments
     ---------
-    amps, depths, times : arrays of shape (n_spikes,)
+    amps : np.array of shape (n_spikes,)
+    depths: np.array of shape (n_spikes,)
+    times : np.array of shape (n_spikes,)
         The amplitudes, depths (microns) and times (seconds) of input
         spike events.
-    rigid : bool
+    rigid : bool, default=False
         If True, ignore the nonrigid window args (win_shape, win_step_um, win_scale_um,
         win_margin_um) and do rigid registration (equivalent to one flat window, which
         is how it's implemented).
-    bin_um, bin_s : numbers
+    bin_um: float
+    bin_s : float
         The size of the bins along depth in microns and along time in seconds.
         The returned object's .displacement array will respect these bins.
         Increasing these can lead to more stable estimates and faster runtimes
         at the cost of spatial and/or temporal resolution.
-    win_shape, win_step_um, win_scale_um, win_margin_um
-        Control the shape ("gaussian", "rect") of the windows, the step/distance between
-        windows, their scale/size (i.e. the bandwidth of the Gaussian kernels), and their
-        margin from the border (-1000 means there will be no window center within 1000um
-        of the edge of the probe)
-    max_disp_um : number
+    max_disp_um : float
         Maximum possible displacement in microns. If you can guess a number which is larger
         than the largest displacement possible in your recording across a span of `max_dt_s`
         seconds, setting this value to that number can stabilize the result and speed up
-        the algorithm (since it can do shorter cross-correlations).
+        the algorithm (since it can do less cross-correlating).
+        By default, this is set to win-scale_um / 4, or 112.5 microns. Which can be a bit
+        large!
+    max_dt_s : float
+        "Time horizon" parameter, in seconds. Time bins separated by more seconds than this
+        will not be cross-correlated. So, if your data has nonstationarities or changes which
+        could lead to bad cross-correlations at some timescale, it can help to input that
+        value here. If this is too small, it can make the motion estimation unstable.
+    mincorr : float, between 0 and 1
+        Correlation threshold. Pairs of frames whose maximal cross correlation value is smaller
+        than this threshold will be ignored when solving for the global displacement estimate.
+    win_shape : str, default="gaussian"
+        Nonrigid window shape
+    win_step_um : float
+        Spacing between nonrigid window centers in microns
+    win_scale_um : float
+        Controls the width of nonrigid windows centers
+    win_margin_um : float
+        Distance of nonrigid windows centers from the probe boundary (-1000 means there will
+        be no window center within 1000um of the edge of the probe)
     thomas_kw, xcorr_kw, raster_kw, weights_kw
         These dictionaries allow setting parameters for fine control over the registration
+    device : str or torch.device
+        What torch device to run on? E.g., "cpu" or "cuda" or "cuda:1".
 
     Returns
     -------
@@ -84,7 +108,9 @@ def register(
         the time and spatial bins, and methods for getting the displacement at a particular
         time and depth. See the documentation of these classes in motion_util.py.
     extra : dict
-        This has extra info about what happened during registration
+        This has extra info about what happened during registration, including the nonrigid
+        windows if one wants to visualize them. Set `save_full` to also save displacement
+        and correlation matrices.
     """
     thomas_kw = thomas_kw if thomas_kw is not None else {}
     xcorr_kw = xcorr_kw if xcorr_kw is not None else {}
@@ -129,9 +155,7 @@ def register(
         win_step_um,
         win_scale_um,
         spatial_bin_edges=spatial_bin_edges_um,
-        margin_um=-win_scale_um / 2
-        if win_margin_um is None
-        else win_margin_um,
+        margin_um=-win_scale_um / 2 if win_margin_um is None else win_margin_um,
         win_shape=win_shape,
         zero_threshold=1e-5,
         rigid=rigid,
