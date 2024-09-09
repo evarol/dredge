@@ -339,7 +339,26 @@ def get_motion_estimate(
     )
 
 
-def get_interpolated_recording(motion_est, recording, border_mode="remove_channels"):
+def motion_estimate_to_spikeinterface_motion(motion_est):
+    from spikeinterface.sortingcomponents.motion import Motion
+
+    spatial_bins_um = motion_est.spatial_bin_centers_um
+    if spatial_bins_um is None:
+        spatial_bins_um = np.zeros(1)
+
+    return Motion(
+        np.atleast_2d(motion_est.displacement).T,
+        motion_est.time_bin_centers_s,
+        spatial_bins_um,
+    )
+
+
+def get_interpolated_recording(
+    motion_est,
+    recording,
+    border_mode="remove_channels",
+    spatial_interpolation_method="kriging",
+):
     """Use spikeinterface to interpolate a recording to correct for the motion in motion_est
 
     This handles internally translation between the sample times of recording
@@ -364,9 +383,7 @@ def get_interpolated_recording(motion_est, recording, border_mode="remove_channe
     # we need to make a copy of the recording which has no times stored
     # this is not something spikeinterface supports so we are doing it manually
     from copy import copy
-    from spikeinterface.sortingcomponents.motion_interpolation import (
-        interpolate_motion,
-    )
+    from spikeinterface.sortingcomponents.motion import interpolate_motion
 
     rec = copy(recording)
     rec._recording_segments[0] = copy(rec._recording_segments[0])
@@ -382,26 +399,17 @@ def get_interpolated_recording(motion_est, recording, border_mode="remove_channe
         motion_est.time_bin_centers_s - motion_est.time_bin_centers_s[0] + dt / 2
     )
 
-    # the other issue is that spikeinterface doesn't understand rigid interpolation for now
-    # so, we have to turn our rigid estimate into a nonrigid estimate
-    spatial_bins = motion_est.spatial_bin_centers_um
-    displacement = motion_est.displacement
-    if spatial_bins is None:
-        # we had a rigid motion
-        # spatial bins can be the edges of the probe?
-        geom_y = rec.get_channel_locations()[:, 1]
-        spatial_bins = [geom_y.min(), geom_y.max()]
-        # make 2 copies of our displacement so that they appear to correspond to these spatial bins
-        displacement = np.stack((displacement, displacement), axis=0)
-        assert displacement.ndim == 2 and displacement.shape[0] == 2
+    # patch over the motion est's time and space info info
+    motion_est = copy(motion_est)
+    motion_est.time_bin_centers_s = temporal_bins
+    si_motion = motion_estimate_to_spikeinterface_motion(motion_est)
 
     # now we can use correct_motion
     rec_interpolated = interpolate_motion(
         rec,
-        displacement.T,
-        temporal_bins,
-        spatial_bins,
+        si_motion,
         border_mode=border_mode,
+        spatial_interpolation_method=spatial_interpolation_method,
     )
     return rec_interpolated
 
@@ -555,6 +563,7 @@ def plot_me_traces(
     zero_times=False,
     t_start=None,
     t_end=None,
+    cmap=None,
     **plot_kwargs,
 ):
     """Plot the displacement estimates for the MotionEstimate me as lines."""
@@ -580,6 +589,8 @@ def plot_me_traces(
                 lab = label
         else:
             lab = f"bin {b}" if label else None
+        if cmap is not None:
+            plot_kwargs["color"] = cmap(b / len(depths_um))
         l = ax.plot(
             times - t_offset,
             depth + offset + disp,
