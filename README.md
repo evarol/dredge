@@ -14,6 +14,7 @@ motion).
 > For information, see the tutorial pages:
 >  - Handle motion/drift with spikeinterface: https://spikeinterface.readthedocs.io/en/latest/how_to/handle_drift.html
 >  - Estimate drift using the LFP traces: https://spikeinterface.readthedocs.io/en/latest/how_to/drift_with_lfp.html
+> 
 > and the module documentation:
 >    - Motion/drift correction module summary https://spikeinterface.readthedocs.io/en/latest/modules/motion_correction.html
 >    - API reference: https://spikeinterface.readthedocs.io/en/latest/api.html#module-spikeinterface.sortingcomponents.motion
