@@ -8,9 +8,17 @@ field potentials and from spike data, and the motion estimate can be rigid (i.e.
 not change along the probe) or nonrigid (different channels on the probe may undergo different
 motion).
 
-> :point_right: For spike-based workflows (not LFP), [SpikeInterface][spikeinterface] implements DREDge under the name `"decentralized"`, and this is very easy to combine with motion-correction interpolation for input into spike sorters such as Kilosort or Spyking Circus.
-> 
-> We suggest to combine this with the "monopolar_triangulation" localization method (Boussard et al., Neurips). The "nonrigid_accurate" preset for their `correct_motion()` function combines this localization method with DREDge and an interpolator. See https://spikeinterface.readthedocs.io/en/latest/modules/motion_correction.html for info!
+> :point_right: We now recommend using [SpikeInterface][spikeinterface] to run DREDge (both the AP and LFP methods) and integrate it with downstream interpolation and spike sorting pipelines.
+> SpikeInterface's [`correct_motion()`](https://spikeinterface.readthedocs.io/en/latest/api.html#spikeinterface.preprocessing.correct_motion) function implements DREDge under the presets
+> `"dredge"`, `"dredge_fast"`, as well as older versions of DREDge under the name `"decentralized"` (the presets `"nonrigid_accurate"`, `"nonrigid_fast_and_accurate"`, and `"rigid_fast"`).
+> For information, see the tutorial pages:
+>  - Handle motion/drift with spikeinterface: https://spikeinterface.readthedocs.io/en/latest/how_to/handle_drift.html
+>  - Estimate drift using the LFP traces: https://spikeinterface.readthedocs.io/en/latest/how_to/drift_with_lfp.html
+> and the module documentation:
+>    - Motion/drift correction https://spikeinterface.readthedocs.io/en/latest/modules/motion_correction.html
+
+This repo contains our original implementation of DREDge as well as some extra utility functions. For most users, SpikeInterface would make more sense, but this code is still maintained
+and you can feel free to open issues here with questions.
 
 Check out our preprint for more details and experiments! https://www.biorxiv.org/content/10.1101/2023.10.24.563768v1
 
