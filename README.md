@@ -15,7 +15,8 @@ motion).
 >  - Handle motion/drift with spikeinterface: https://spikeinterface.readthedocs.io/en/latest/how_to/handle_drift.html
 >  - Estimate drift using the LFP traces: https://spikeinterface.readthedocs.io/en/latest/how_to/drift_with_lfp.html
 > and the module documentation:
->    - Motion/drift correction https://spikeinterface.readthedocs.io/en/latest/modules/motion_correction.html
+>    - Motion/drift correction module summary https://spikeinterface.readthedocs.io/en/latest/modules/motion_correction.html
+>    - API reference: https://spikeinterface.readthedocs.io/en/latest/api.html#module-spikeinterface.sortingcomponents.motion
 
 This repo contains our original implementation of DREDge as well as some extra utility functions. For most users, SpikeInterface would make more sense, but this code is still maintained
 and you can feel free to open issues here with questions.
