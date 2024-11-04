@@ -382,31 +382,31 @@ def get_interpolated_recording(
     """
     # we need to make a copy of the recording which has no times stored
     # this is not something spikeinterface supports so we are doing it manually
-    from copy import copy
+    # from copy import copy
     from spikeinterface.sortingcomponents.motion import interpolate_motion
 
-    rec = copy(recording)
-    rec._recording_segments[0] = copy(rec._recording_segments[0])
-    rec._recording_segments[0].t_start = None
-    rec._recording_segments[0].time_vector = None
+    # rec = copy(recording)
+    # rec._recording_segments[0] = copy(rec._recording_segments[0])
+    # rec._recording_segments[0].t_start = None
+    # rec._recording_segments[0].time_vector = None
 
     # fake the temporal bins
     # we have been maintaining the metadata about time bins in our motion estimate,
     # but again, spikeinterface is not doing this so we have to throw that info away
     # before calling spikeinterface functions
-    dt = np.diff(motion_est.time_bin_centers_s).min()
-    temporal_bins = (
-        motion_est.time_bin_centers_s - motion_est.time_bin_centers_s[0] + dt / 2
-    )
+    # dt = np.diff(motion_est.time_bin_centers_s).min()
+    # temporal_bins = (
+    #     motion_est.time_bin_centers_s - motion_est.time_bin_centers_s[0] + dt / 2
+    # )
 
     # patch over the motion est's time and space info info
-    motion_est = copy(motion_est)
-    motion_est.time_bin_centers_s = temporal_bins
+    # motion_est = copy(motion_est)
+    # motion_est.time_bin_centers_s = temporal_bins
     si_motion = motion_estimate_to_spikeinterface_motion(motion_est)
 
     # now we can use correct_motion
     rec_interpolated = interpolate_motion(
-        rec,
+        recording,
         si_motion,
         border_mode=border_mode,
         spatial_interpolation_method=spatial_interpolation_method,
