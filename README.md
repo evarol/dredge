@@ -1,6 +1,7 @@
 <image src="https://github.com/evarol/dredge/blob/main/assets/logo.png" width="200px"></image>
 
 Published in *Nature Methods*: https://www.nature.com/articles/s41592-025-02614-5
+
 Free PDF link: https://rdcu.be/ecqZf
 
 # DREDge: Decentralized Registration of Electrophysiology Data
