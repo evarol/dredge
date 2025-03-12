@@ -1,5 +1,6 @@
-import numpy as np
 from tqdm.auto import trange
+
+import numpy as np
 
 from .dredgelib import (thomas_solve, threshold_correlation_matrix,
                         xcorr_windows)
@@ -10,12 +11,13 @@ def register_online_lfp(
     lfp_recording,
     rigid=True,
     chunk_len_s=10.0,
-    max_disp_um=None,
+    max_disp_um=500,
     # nonrigid window construction arguments
     win_shape="gaussian",
     win_step_um=800,
     win_scale_um=850,
     win_margin_um=None,
+    max_dt_s=None,
     # weighting arguments
     mincorr=0.8,
     mincorr_percentile=None,
@@ -33,7 +35,11 @@ def register_online_lfp(
 
     Arguments
     ---------
-    lfp_recording : spikeinterface recording object
+    lfp_recording : spikeinterface BaseRecording object
+        Preprocessed LFP recording. The temporal resolution of this recording will
+        be the target resolution of the registration, so definitely use SpikeInterface
+        to resample your recording to, say, 250Hz (or a value you like) rather than
+        estimating motion at the original frequency (which may be high).
     rigid : boolean, optional
         If True, window-related arguments are ignored and we do rigid registration
     chunk_len_s : float
@@ -44,23 +50,27 @@ def register_online_lfp(
         But, it can't be set too low or the algorithm doesn't have enough data
         to work with. The default is set assuming sampling rate of 250Hz, leading
         to 2500 samples per chunk.
+    max_dt_s : float
+        Time-bins farther apart than this value in seconds will not be cross-correlated.
+        Set this to at least `chunk_len_s`.
     max_disp_um : number, optional
         This is the ceiling on the possible displacement estimates. It should be
         set to a number which is larger than the allowed displacement in a single
         chunk. Setting it as small as possible (while following that rule) can speed
-        things up.
-    win_shape, win_step_um, win_scale_um, win_margin_um
+        things up and improve the result by making it impossible to estimate motion
+        which is too big.
+    win_shape, win_step_um, win_scale_um, win_margin_um : float
         Nonrigid window-related arguments
         The depth domain will be broken up into windows with shape controlled by win_shape,
         spaced by win_step_um at a margin of win_margin_um from the boundary, and with
         width controlled by win_scale_um.
     mincorr : float in [0,1]
-        Minimum maximal correlation between time bins such that they will be included
-        in the optimization
+        Minimum correlation between pairs of frames such that they will be included
+        in the optimization of the displacement estimates.
     mincorr_percentile, mincorr_percentile_nneighbs
         If mincorr_percentile is set to a number in [0, 100], then mincorr will be replaced
         by this percentile of the correlations of neighbors within mincorr_percentile_nneighbs
-        time bins of each other
+        time bins of each other.
     device : string or torch.device
         Controls torch device
 
@@ -95,7 +105,8 @@ def register_online_lfp(
         in_place=True,
         soft=soft,
         # max_dt_s=weights_kw["max_dt_s"],  # max_dt not implemented for lfp at this point
-        # bin_s=1 / fs,  # only relevant for max_dt_s
+        max_dt_s=max_dt_s,
+        bin_s=1 / fs,  # only relevant for max_dt_s
     )
 
     # get windows
@@ -152,6 +163,7 @@ def register_online_lfp(
         traces1 = lfp_recording.get_traces(start_frame=t1, end_frame=t2)
 
         # cross-correlations between prev/cur chunks
+        # these are T1, T0 shaped
         Ds10, Cs10, _ = xcorr_windows(
             traces1.T,
             windows,
@@ -172,7 +184,7 @@ def register_online_lfp(
             **threshold_kw,
         )
         Ss10, _ = threshold_correlation_matrix(
-            Cs10, mincorr=mincorr1, **threshold_kw
+            Cs10, mincorr=mincorr1, t_offset_bins=T_chunk, **threshold_kw
         )
         extra["mincorrs"].append(mincorr1)
 
