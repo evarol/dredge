@@ -903,6 +903,14 @@ def si_get_windows(
     if spatial_bin_centers is None:
         spatial_bin_centers = 0.5 * (spatial_bin_edges[1:] + spatial_bin_edges[:-1])
     n = spatial_bin_centers.size
+    min_ = np.min(contact_pos[:, 1]) - margin_um
+    max_ = np.max(contact_pos[:, 1]) + margin_um
+    num_non_rigid_windows = int((max_ - min_) // win_step_um)
+    border = ((max_ - min_) % win_step_um) / 2
+    non_rigid_window_centers = (
+        np.arange(num_non_rigid_windows + 1) * win_step_um + min_ + border
+    )
+    rigid = rigid or non_rigid_window_centers.size <= 1
 
     if rigid:
         # win_shape = 'rect' is forced
@@ -910,13 +918,6 @@ def si_get_windows(
         middle = (spatial_bin_centers[0] + spatial_bin_centers[-1]) / 2.0
         non_rigid_window_centers = np.array([middle])
     else:
-        min_ = np.min(contact_pos[:, 1]) - margin_um
-        max_ = np.max(contact_pos[:, 1]) + margin_um
-        num_non_rigid_windows = int((max_ - min_) // win_step_um)
-        border = ((max_ - min_) % win_step_um) / 2
-        non_rigid_window_centers = (
-            np.arange(num_non_rigid_windows + 1) * win_step_um + min_ + border
-        )
         non_rigid_windows = []
 
         for win_center in non_rigid_window_centers:
@@ -937,7 +938,7 @@ def si_get_windows(
 
             non_rigid_windows.append(win)
 
-    return np.array(non_rigid_windows), np.array(non_rigid_window_centers)
+    return np.stack(non_rigid_windows), np.stack(non_rigid_window_centers)
 
 
 def get_window_domains(windows):

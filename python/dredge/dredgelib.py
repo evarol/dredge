@@ -468,7 +468,7 @@ def xcorr_windows(
 
     if max_disp_um is None:
         if rigid:
-            max_disp_um = int(spatial_bin_edges_um.ptp() // 4)
+            max_disp_um = int(np.ptp(spatial_bin_edges_um) // 4)
         else:
             max_disp_um = int(win_scale_um // 4)
 
