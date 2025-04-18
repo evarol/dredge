@@ -620,7 +620,7 @@ def calc_corr_decent_pair(
             max_corr, best_disp_inds = torch.max(corr, dim=2)
             best_disp = possible_displacement[best_disp_inds.cpu()]
             D[i : i + batch_size, j : j + batch_size] = best_disp.T
-            C[i : i + batch_size, j : j + batch_size] = max_corr.cpu().T
+            C[i : i + batch_size, j : j + batch_size] = max_corr.numpy(force=True).T
 
     return D, C
 
