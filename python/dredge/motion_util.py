@@ -156,9 +156,10 @@ class RigidMotionEstimate(MotionEstimate):
         An array of displacements in microns with the same shape as t_s (when grid=False).
         """
         t_s = np.asarray(t_s)
-        if depth_um is not None and depth_um.shape != t_s.shape:
-            assert grid
-        depth_um = np.asarray(depth_um)
+        if depth_um is not None:
+            depth_um = np.asarray(depth_um)
+            if depth_um.shape != t_s.shape:
+                assert grid
         disp = self.lerp(np.asarray(t_s))
         if grid:
             disp = disp[None]
