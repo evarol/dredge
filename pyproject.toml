@@ -23,3 +23,11 @@ classifiers = [
 
 [tool.setuptools.packages.find]
 where = ["python"]
+
+dependencies = [
+  "numpy",
+  "torch",
+  "scipy",
+  "spikeinterface",
+  "tqdm",
+]
