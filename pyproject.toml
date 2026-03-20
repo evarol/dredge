@@ -26,6 +26,3 @@ dependencies = [
 [project.urls]
 "Homepage" = "https://github.com/cwindolf/dredge"
 "Bug Tracker" = "https://github.com/cwindolf/dredge/issues"
-
-[tool.setuptools.packages.find]
-where = ["python"]
