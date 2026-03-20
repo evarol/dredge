@@ -29,6 +29,3 @@ dependencies = [
 
 [tool.versioningit]
 # use their defaults
-
-[tool.setuptools.packages.find]
-exclude = ["matlab*", "notebook*s"]
