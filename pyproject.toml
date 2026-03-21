@@ -1,33 +1,31 @@
 [build-system]
-requires = ["setuptools>=61.0"]
+requires = ["setuptools>=64.0", "setuptools-scm>=8", "versioningit"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "dredge"
-version = "0.3.0"
-authors = [
-  { name="Charlie Windolf", email="ciw2107@columbia.edu" },
-]
+name = "dredge-ephys"
+dynamic = ["version"]
+authors = [{ name = "Charlie Windolf", email = "ciw2048@gmail.com" }]
 description = "DREDge: Decentralized Registration for Electrophysiology Data (... ge)"
 readme = "README.md"
 requires-python = ">=3.8"
 classifiers = [
-    "Programming Language :: Python :: 3",
-    "License :: OSI Approved :: MIT License",
-    "Operating System :: OS Independent",
+  "Programming Language :: Python :: 3",
+  "License :: OSI Approved :: MIT License",
+  "Operating System :: OS Independent",
 ]
-
-[project.urls]
-"Homepage" = "https://github.com/evarol/dredge"
-"Bug Tracker" = "https://github.com/evarol/dredge/issues"
-
-[tool.setuptools.packages.find]
-where = ["python"]
-
 dependencies = [
-  "numpy",
+  "numpy>=1.20;python_version<'3.13'",
+  "numpy>=2.0.0;python_version>='3.13'",
   "torch",
-  "scipy",
+  "scipy>=1.13",
   "spikeinterface",
   "tqdm",
 ]
+
+[project.urls]
+"Homepage" = "https://github.com/cwindolf/dredge"
+"Bug Tracker" = "https://github.com/cwindolf/dredge/issues"
+
+[tool.versioningit]
+# use their defaults
